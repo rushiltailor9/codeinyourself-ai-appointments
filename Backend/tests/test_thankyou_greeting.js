@@ -60,6 +60,11 @@ async function runThankYouGreetingTests() {
   console.log('   Check 6 (Greeting message):', res4.message.includes('Welcome to Nexora') ? 'PASS' : 'FAIL');
 
   console.log('\n--- ALL THANK YOU & GREETING TESTS COMPLETED ---');
+
+  // Auto-cleanup test conversations
+  await mongoose.connection.collection('aichats').deleteMany({
+    conversationId: { $in: [convId, convId2] },
+  });
   await mongoose.disconnect();
 }
 

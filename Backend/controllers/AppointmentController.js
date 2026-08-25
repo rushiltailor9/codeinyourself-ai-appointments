@@ -67,7 +67,8 @@ export async function reschedule(req, res) {
 
 export async function cancel(req, res) {
   try {
-    const cancelled = await cancelAppointment(req.params.id, req.body.reason);
+    const cancelledBy = req.user?.role === 'admin' ? 'admin' : 'client';
+    const cancelled = await cancelAppointment(req.params.id, req.body?.reason || '', cancelledBy);
     return res.json({ success: true, appointment: cancelled, message: 'Appointment cancelled successfully' });
   } catch (error) {
     return res.status(400).json({ success: false, message: error.message });
@@ -86,10 +87,10 @@ export async function listAllAdmin(req, res) {
 
 export async function updateStatusAdmin(req, res) {
   try {
-    const { status } = req.body;
+    const { status, reason } = req.body;
     if (!status) return res.status(400).json({ success: false, message: 'Status is required' });
 
-    const updated = await updateAppointmentStatus(req.params.id, status);
+    const updated = await updateAppointmentStatus(req.params.id, status, 'admin', reason || '');
     return res.json({ success: true, appointment: updated });
   } catch (error) {
     return res.status(400).json({ success: false, message: error.message });

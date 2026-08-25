@@ -35,7 +35,12 @@ export async function handleAIChat(req, res) {
 
 export async function getAllChatsAdmin(req, res) {
   try {
-    const chats = await AIChat.find().sort({ updatedAt: -1 });
+    // Only return real user chats (exclude automated test runs)
+    const chats = await AIChat.find({
+      conversationId: { $not: /^(test-|no-appt-|e2e-)/i },
+      clientEmail: { $not: /(@example\.com|tester)/i },
+    }).sort({ updatedAt: -1 });
+
     // Format to match admin dashboard format if needed
     const formatted = chats.map((c) => ({
       id: c.conversationId,

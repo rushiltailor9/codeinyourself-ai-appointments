@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { processAIChat } from '../services/aiService.js';
 import Appointment from '../models/Appointment.js';
+import AIChat from '../models/AIChat.js';
 import User from '../models/User.js';
 import Service from '../models/Service.js';
 import { validateSlotAvailability } from '../services/availabilityService.js';
@@ -121,6 +122,10 @@ async function testCancelAndRescheduleFlow() {
   console.log(`   MongoDB Updated Time: ${updatedApptB.startTime} (Expected 14:00):`, updatedApptB.startTime === '14:00' ? 'PASS' : 'FAIL');
 
   console.log('\n--- ALL CANCELLATION AND RESCHEDULING TESTS COMPLETED SUCCESSFULLY ---');
+
+  // Auto-cleanup test records
+  await Appointment.deleteMany({ _id: { $in: [apptA._id, apptB._id] } });
+  await AIChat.deleteMany({ conversationId: { $in: [convIdA, convIdB] } });
   await mongoose.disconnect();
 }
 

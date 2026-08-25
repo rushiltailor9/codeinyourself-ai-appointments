@@ -83,6 +83,13 @@ async function runFullSystemE2ETest() {
   console.log('6. AI Courtesy & Parting Message:', chatData3.message.includes('welcome') ? 'PASS' : 'FAIL');
 
   console.log('\n=== ALL E2E SANITY CHECKS PASSED (100%) ===');
+
+  // Auto-cleanup test data so only real user data remains
+  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/ai_appointment');
+  await mongoose.connection.collection('aichats').deleteMany({ conversationId: convId });
+  await mongoose.connection.collection('appointments').deleteMany({ clientEmail: testEmail });
+  await mongoose.connection.collection('users').deleteMany({ email: testEmail });
+  await mongoose.disconnect();
 }
 
 runFullSystemE2ETest().catch(console.error);

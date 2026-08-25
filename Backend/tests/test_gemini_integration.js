@@ -54,6 +54,9 @@ async function testGeminiIntegration() {
   console.log('   Check 4 (Verified Slot & Awaits Confirmation):', res2.awaitingConfirmation === true || res2.message.includes('confirm') ? 'PASS' : 'FAIL');
 
   console.log('\n--- GEMINI INTEGRATION TESTS COMPLETED SUCCESSFULLY ---');
+
+  // Auto-cleanup test conversation
+  await mongoose.connection.collection('aichats').deleteMany({ conversationId: convId });
   await mongoose.disconnect();
 }
 

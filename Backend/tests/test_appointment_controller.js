@@ -31,7 +31,7 @@ async function runAppointmentControllerTests() {
     { expiresIn: '1h' }
   );
 
-  let adminUser = await User.findOne({ email: 'admin@codeinyourself.com' });
+  let adminUser = await User.findOne({ role: 'admin' });
   const adminToken = jwt.sign(
     { userId: adminUser._id, role: 'admin', email: adminUser.email },
     process.env.JWT_SECRET || 'codeinyourself_secret_key_2026',
@@ -137,6 +137,10 @@ async function runAppointmentControllerTests() {
   console.log('   Check 7 (Cancelled status):', cancelData.appointment?.status === 'CANCELLED' ? 'PASS' : 'FAIL');
 
   console.log('\n--- ALL APPOINTMENT CONTROLLER REST TESTS COMPLETED ---');
+
+  // Auto-cleanup test data so only real users remain in MongoDB
+  await mongoose.connection.collection('appointments').deleteMany({ clientEmail: testUser.email });
+  await mongoose.connection.collection('users').deleteMany({ email: testUser.email });
   await mongoose.disconnect();
 }
 

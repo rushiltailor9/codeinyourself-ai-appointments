@@ -101,7 +101,7 @@ export async function getAllAppointments(filter = {}) {
   return await Appointment.find(query).sort({ date: -1, startTime: -1 });
 }
 
-export async function updateAppointmentStatus(appointmentId, status, updatedBy = 'admin') {
+export async function updateAppointmentStatus(appointmentId, status, updatedBy = 'admin', reason = '') {
   const allowed = ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'COMPLETED'];
   const upperStatus = status.toUpperCase();
   if (!allowed.includes(upperStatus)) {
@@ -118,24 +118,55 @@ export async function updateAppointmentStatus(appointmentId, status, updatedBy =
     throw new Error('Appointment not found');
   }
 
-  // Send status update notification to client
-  await createNotification({
-    userId: appointment.userId,
-    recipientRole: 'client',
-    type: `BOOKING_${upperStatus}`,
-    message: `Your appointment on ${appointment.date} at ${appointment.startTime} is now marked as ${upperStatus}.`,
-  });
+  // Bidirectional Cancel Notification Routing
+  if (upperStatus === 'CANCELLED') {
+    if (updatedBy === 'admin') {
+      // Admin cancelled -> Notify Client
+      await createNotification({
+        userId: appointment.userId,
+        recipientRole: 'client',
+        type: 'BOOKING_CANCELLED_BY_ADMIN',
+        message: `Your appointment for ${appointment.serviceName} on ${appointment.date} at ${appointment.startTime} was cancelled by administrator.${reason ? ` Reason: ${reason}` : ''}`,
+      });
+    } else {
+      // Client cancelled -> Notify Admin & Client
+      await createNotification({
+        recipientRole: 'admin',
+        type: 'BOOKING_CANCELLED_BY_CLIENT',
+        message: `Client ${appointment.clientName} cancelled their appointment for ${appointment.serviceName} scheduled on ${appointment.date} at ${appointment.startTime}.${reason ? ` Reason: ${reason}` : ''}`,
+      });
+
+      await createNotification({
+        userId: appointment.userId,
+        recipientRole: 'client',
+        type: 'BOOKING_CANCELLED',
+        message: `Your appointment for ${appointment.serviceName} on ${appointment.date} at ${appointment.startTime} has been cancelled.`,
+      });
+    }
+  } else {
+    // Send standard status update notification to client
+    await createNotification({
+      userId: appointment.userId,
+      recipientRole: 'client',
+      type: `BOOKING_${upperStatus}`,
+      message: `Your appointment on ${appointment.date} at ${appointment.startTime} is now marked as ${upperStatus}.`,
+    });
+  }
 
   return appointment;
 }
 
-export async function cancelAppointment(appointmentId, reason = '') {
-  return await updateAppointmentStatus(appointmentId, 'CANCELLED');
+export async function cancelAppointment(appointmentId, reason = '', cancelledBy = 'client') {
+  const isCancelledByAdmin = cancelledBy === 'admin' || (reason && reason.toLowerCase().includes('admin'));
+  return await updateAppointmentStatus(appointmentId, 'CANCELLED', isCancelledByAdmin ? 'admin' : 'client', reason);
 }
 
-export async function rescheduleAppointment(appointmentId, newDate, newStartTime) {
+export async function rescheduleAppointment(appointmentId, newDate, newStartTime, rescheduledBy = 'client') {
   const appt = await Appointment.findById(appointmentId);
   if (!appt) throw new Error('Appointment not found');
+
+  const oldDate = appt.date;
+  const oldTime = appt.startTime;
 
   const validation = await validateSlotAvailability(newDate, newStartTime, appt.duration, appointmentId);
   if (!validation.valid) {
@@ -148,17 +179,19 @@ export async function rescheduleAppointment(appointmentId, newDate, newStartTime
   appt.status = 'CONFIRMED';
   await appt.save();
 
+  // 1. Client notification
   await createNotification({
     userId: appt.userId,
     recipientRole: 'client',
     type: 'BOOKING_RESCHEDULED',
-    message: `Your appointment has been rescheduled to ${newDate} at ${newStartTime}.`,
+    message: `Your appointment for ${appt.serviceName} has been rescheduled to ${newDate} at ${newStartTime}.`,
   });
 
+  // 2. Admin notification
   await createNotification({
     recipientRole: 'admin',
     type: 'BOOKING_RESCHEDULED',
-    message: `Appointment for ${appt.clientName} was rescheduled to ${newDate} at ${newStartTime}.`,
+    message: `Client ${appt.clientName} rescheduled their appointment for ${appt.serviceName} from ${oldDate} ${oldTime} to ${newDate} at ${newStartTime}.`,
   });
 
   return appt;

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { processAIChat } from '../services/aiService.js';
 import Appointment from '../models/Appointment.js';
+import AIChat from '../models/AIChat.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -67,6 +68,10 @@ async function runTest() {
   console.log('Check 4: Explains no active appointments found:', res3.message.includes('couldn\'t find any active booked appointments') ? 'PASS' : 'FAIL');
 
   console.log('\n--- EXACT USER PHRASE TESTS COMPLETED ---');
+
+  // Auto-cleanup test records
+  await Appointment.deleteMany({ _id: appt._id });
+  await AIChat.deleteMany({ clientEmail: testClient.email });
   await mongoose.disconnect();
 }
 

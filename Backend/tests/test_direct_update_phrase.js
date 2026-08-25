@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { processAIChat } from '../services/aiService.js';
 import Appointment from '../models/Appointment.js';
+import AIChat from '../models/AIChat.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -56,6 +57,10 @@ async function runUpdateTest() {
   console.log('Check 2: Slot updated with confirmation:', res2.rescheduled === true ? 'PASS' : 'FAIL');
 
   console.log('\n--- UPDATE PHRASE TESTS COMPLETED ---');
+
+  // Auto-cleanup test records
+  await Appointment.deleteMany({ _id: appt._id });
+  await AIChat.deleteMany({ clientEmail: testClient.email });
   await mongoose.disconnect();
 }
 
