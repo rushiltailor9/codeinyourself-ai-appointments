@@ -160,6 +160,35 @@ export async function processAIChat({ message, conversationId, user = null }) {
 
   const isAffirmative = ['yes', 'confirm', 'sure', 'sounds good', 'yes please', 'ok', 'okay', 'book it', 'proceed', 'cancel it', 'yes cancel'].some((w) => lower === w || lower.startsWith(w));
 
+  const isNegative = [
+    'no',
+    'no thanks',
+    'no thank you',
+    'not now',
+    'nope',
+    'nah',
+    'nevermind',
+    'never mind',
+    "i can't",
+    'i cannot',
+    'cannot book',
+    "can't book",
+    'not today',
+    'maybe later',
+    'dont want',
+    "don't want",
+    'no i am busy',
+    "no i'm busy",
+    'not interested',
+    'not available',
+    'no i cannot',
+    'no i cant',
+    'no i can not',
+    'decline',
+    'not able to book',
+    'not able',
+  ].some((w) => lower === w || lower.startsWith(w + ' ') || lower.endsWith(' ' + w) || lower.includes(' ' + w + ' ') || lower.includes('no thanks') || lower.includes('no thank you') || lower.includes('not now') || lower.includes('maybe later') || lower.includes("can't book") || lower.includes('cannot book') || lower.includes('not able to book') || lower.includes('not able'));
+
   // 1. PENDING ACTION: Cancellation Confirmation
   if (draft.pendingAction === 'CANCEL_CONFIRMATION') {
     if (isAffirmative || lower.includes('cancel')) {
@@ -474,6 +503,50 @@ export async function processAIChat({ message, conversationId, user = null }) {
       await chatRecord.save();
       return { success: false, message: reply, conversationId: convId };
     }
+  }
+
+  // 7.1. INTENT: Client Says No / Declines Booking After Slot Is Available Or During Confirmation
+  if (
+    isNegative &&
+    !isAffirmative &&
+    (draft.awaitingConfirmation || (draft.service && (draft.date || draft.time)))
+  ) {
+    const clientFirstName = user?.name?.split(' ')[0] || draft.name?.split(' ')[0] || '';
+    const namePrefix = clientFirstName ? `, ${clientFirstName}` : '';
+    const reply = `No problem at all${namePrefix}! Thank you for considering Nexora Technologies. If you need any assistance or would like to schedule an appointment in the future, feel free to reach out anytime. Wishing you a great day ahead!`;
+
+    chatRecord.bookingDraft = {
+      service: null,
+      serviceId: null,
+      date: null,
+      time: null,
+      name: user?.name || null,
+      email: user?.email || null,
+      awaitingConfirmation: false,
+      pendingAction: null,
+      targetAppointmentId: null,
+      targetDetails: null,
+    };
+
+    chatRecord.messages.push({ sender: 'ai', text: reply });
+    chatRecord.markModified('bookingDraft');
+    await chatRecord.save();
+    return { success: true, message: reply, conversationId: convId, declined: true, draft: chatRecord.bookingDraft };
+  }
+
+  // 7.2. INTENT: Client Says "No" / "No Thanks" In General
+  if (
+    isNegative &&
+    !draft.service &&
+    !draft.date &&
+    !draft.pendingAction
+  ) {
+    const clientFirstName = user?.name?.split(' ')[0] || '';
+    const namePrefix = clientFirstName ? `, ${clientFirstName}` : '';
+    const reply = `You're very welcome${namePrefix}! Thank you for contacting Nexora Technologies. Let us know whenever you need any IT assistance. Have a wonderful day ahead!`;
+    chatRecord.messages.push({ sender: 'ai', text: reply });
+    await chatRecord.save();
+    return { success: true, message: reply, conversationId: convId, draft };
   }
 
   // 8. INTENT: Thank You & Polite Greeting Response
