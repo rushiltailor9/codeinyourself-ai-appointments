@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
 import { Navbar } from './components/Navbar.jsx';
 import { HomeScreen } from './components/HomeScreen.jsx';
 import { ServicesScreen } from './components/ServicesScreen.jsx';
@@ -68,6 +69,7 @@ export default function ClientApp() {
 
   const handleBookingConfirmed = (newBooking) => {
     setBookings((prev) => [newBooking, ...prev]);
+    toast.success(`🎉 Appointment confirmed for ${newBooking.service || newBooking.serviceName || 'Consultation'} on ${newBooking.date} at ${newBooking.time || newBooking.startTime}!`);
     if (user?.email) {
       fetchBookings(user.email);
     }
@@ -76,17 +78,20 @@ export default function ClientApp() {
   const handleSelectServiceForBooking = (serviceName) => {
     setPrefillService(serviceName);
     setCurrentScreen('home');
+    toast.info(`Selected ${serviceName} for booking consultation.`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectProjectForBooking = (projectName) => {
     setPrefillService(`Project scope similar to ${projectName}`);
     setCurrentScreen('home');
+    toast.info(`Configured project scope for consultation.`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleLoginSuccess = (loggedInUser) => {
     setUser(loggedInUser);
+    toast.success(`Welcome, ${loggedInUser.name}!`);
     if (loggedInUser.role === 'admin') {
       window.location.href = '/admin';
       return;
@@ -105,11 +110,13 @@ export default function ClientApp() {
       setBookings((prev) =>
         prev.map((b) => (b.id === appointmentId ? { ...b, status: 'cancelled' } : b))
       );
+      toast.warning('Appointment slot has been cancelled.');
       if (user?.email) {
         fetchBookings(user.email);
       }
     } catch (err) {
       console.warn('Cancel appointment error:', err);
+      toast.error(err.message || 'Could not cancel appointment.');
     }
   };
 
@@ -117,6 +124,7 @@ export default function ClientApp() {
     logoutUser();
     setUser(null);
     setBookings([]);
+    toast.info('You have been signed out.');
     setCurrentScreen('home');
   };
 

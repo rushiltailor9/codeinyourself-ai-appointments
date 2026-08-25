@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
 import { ShieldAlert, Terminal, ArrowLeft } from 'lucide-react';
 import Sidebar from './components/Sidebar.jsx';
 import Header from './components/Header.jsx';
@@ -180,8 +181,10 @@ export default function AdminApp() {
   const handleSendMessage = async (chatId, text) => {
     try {
       await sendAdminReply(chatId, text);
+      toast.success('Direct reply sent to client.');
     } catch (e) {
       console.warn('Send reply API error:', e.message);
+      toast.error('Failed to send reply to client.');
     }
     setChats((prev) =>
       prev.map((c) => {
@@ -204,8 +207,10 @@ export default function AdminApp() {
       if (serviceId && !serviceId.startsWith('svc-')) {
         await updateServiceAdmin(serviceId, updatedFields);
       }
+      toast.info('Service configuration updated.');
     } catch (e) {
       console.warn('Update service API error:', e.message);
+      toast.error('Failed to update service.');
     }
     setServices((prev) => prev.map((s) => (s.id === serviceId ? { ...s, ...updatedFields } : s)));
   };
@@ -226,8 +231,10 @@ export default function AdminApp() {
       if (res.success && res.service) {
         newService.id = res.service._id;
       }
+      toast.success(`Service "${newService.name}" created successfully.`);
     } catch (e) {
       console.warn('Create service API error:', e.message);
+      toast.error('Failed to create service.');
     }
     setServices((prev) => [newService, ...prev]);
   };
@@ -246,8 +253,10 @@ export default function AdminApp() {
       if (res.success && res.appointment) {
         newApt.id = res.appointment._id;
       }
+      toast.success(`Appointment created for ${newApt.clientName} on ${newApt.date} at ${newApt.time}.`);
     } catch (e) {
       console.warn('Create appointment API error:', e.message);
+      toast.error(e.message || 'Failed to create appointment.');
     }
     setAppointments((prev) => [newApt, ...prev]);
   };
@@ -257,14 +266,23 @@ export default function AdminApp() {
       if (aptId && !aptId.startsWith('apt-')) {
         await cancelAppointment(aptId, 'Cancelled by admin');
       }
+      toast.warning('Appointment cancelled and slot released.');
     } catch (e) {
       console.warn('Cancel appointment API error:', e.message);
+      toast.error(e.message || 'Failed to cancel appointment.');
     }
     setAppointments((prev) => prev.map((a) => (a.id === aptId ? { ...a, status: 'cancelled' } : a)));
   };
 
-  const handleAddTeamMember = (newMember) => setTeamMembers((prev) => [...prev, newMember]);
-  const handleSaveSettings = (newSettings) => setSettings((prev) => ({ ...prev, ...newSettings }));
+  const handleAddTeamMember = (newMember) => {
+    setTeamMembers((prev) => [...prev, newMember]);
+    toast.success(`Team member ${newMember.name} added.`);
+  };
+
+  const handleSaveSettings = (newSettings) => {
+    setSettings((prev) => ({ ...prev, ...newSettings }));
+    toast.success('System settings saved successfully.');
+  };
 
   const handleOpenClientProfile = (details, name) => {
     setClientProfileData({ isOpen: true, clientName: name, clientDetails: details || {} });
@@ -294,7 +312,9 @@ export default function AdminApp() {
   const handleAdminLoginSubmit = async (e) => {
     e.preventDefault();
     if (!adminLoginForm.email.trim() || !adminLoginForm.password.trim()) {
-      setAdminLoginError('Please enter administrator email and password.');
+      const msg = 'Please enter administrator email and password.';
+      setAdminLoginError(msg);
+      toast.error(msg);
       return;
     }
     setAdminLoginLoading(true);
@@ -306,18 +326,25 @@ export default function AdminApp() {
       });
       if (res.success && res.user) {
         if (res.user.role !== 'admin') {
-          setAdminLoginError('Access denied: This account is a client account and does not have administrator privileges.');
+          const msg = 'Access denied: This account is a client account and does not have administrator privileges.';
+          setAdminLoginError(msg);
+          toast.error(msg);
           logoutUser();
           setCurrentUser(null);
         } else {
           setCurrentUser(res.user);
+          toast.success(`Welcome to Ops Console, ${res.user.name}`);
           loadBackendData();
         }
       } else {
-        setAdminLoginError(res.message || 'Invalid administrator credentials.');
+        const msg = res.message || 'Invalid administrator credentials.';
+        setAdminLoginError(msg);
+        toast.error(msg);
       }
     } catch (err) {
-      setAdminLoginError(err.message || 'Login failed. Please check your credentials.');
+      const msg = err.message || 'Login failed. Please check your credentials.';
+      setAdminLoginError(msg);
+      toast.error(msg);
     } finally {
       setAdminLoginLoading(false);
     }
@@ -326,6 +353,7 @@ export default function AdminApp() {
   const handleLogout = () => {
     logoutUser();
     setCurrentUser(null);
+    toast.info('Signed out from Admin Console.');
     window.location.href = '/';
   };
 

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toast } from 'react-toastify';
 import { Terminal, User, Mail, Phone, Lock, ArrowRight } from 'lucide-react';
 import { loginUser, registerUser } from '../../api/authApi.js';
 
@@ -26,11 +27,15 @@ export function LoginScreen({ onLoginSuccess, onBackToHome }) {
 
     if (isRegister) {
       if (!formData.name.trim() || !formData.email.trim() || !formData.password.trim()) {
-        setError('Please fill in your name, email, and password.');
+        const msg = 'Please fill in your name, email, and password.';
+        setError(msg);
+        toast.error(msg);
         return;
       }
       if (formData.password.length < 6) {
-        setError('Password must be at least 6 characters.');
+        const msg = 'Password must be at least 6 characters.';
+        setError(msg);
+        toast.error(msg);
         return;
       }
       setLoading(true);
@@ -43,18 +48,25 @@ export function LoginScreen({ onLoginSuccess, onBackToHome }) {
         });
 
         if (res.success && res.user) {
+          toast.success('Account created successfully! Welcome to Nexora.');
           onLoginSuccess(res.user);
         } else {
-          setError(res.message || 'Registration failed.');
+          const msg = res.message || 'Registration failed.';
+          setError(msg);
+          toast.error(msg);
         }
       } catch (err) {
-        setError(err.message || 'Error creating account. Please try again.');
+        const msg = err.message || 'Error creating account. Please try again.';
+        setError(msg);
+        toast.error(msg);
       } finally {
         setLoading(false);
       }
     } else {
       if (!formData.email.trim() || !formData.password.trim()) {
-        setError('Please enter both your email and password.');
+        const msg = 'Please enter both your email and password.';
+        setError(msg);
+        toast.error(msg);
         return;
       }
       setLoading(true);
@@ -66,12 +78,17 @@ export function LoginScreen({ onLoginSuccess, onBackToHome }) {
         });
 
         if (res.success && res.user) {
+          toast.success(`Signed in successfully as ${res.user.name}`);
           onLoginSuccess(res.user);
         } else {
-          setError(res.message || 'Invalid credentials.');
+          const msg = res.message || 'Invalid credentials.';
+          setError(msg);
+          toast.error(msg);
         }
       } catch (err) {
-        setError(err.message || 'Login failed. Please verify your credentials.');
+        const msg = err.message || 'Login failed. Please verify your credentials.';
+        setError(msg);
+        toast.error(msg);
       } finally {
         setLoading(false);
       }

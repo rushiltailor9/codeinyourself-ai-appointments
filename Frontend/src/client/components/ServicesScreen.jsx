@@ -20,8 +20,9 @@ export function ServicesScreen({ onSelectServiceForBooking }) {
           );
         }
       })
-      .catch(() => {
+      .catch((error) => {
         // Keep static services
+        console.log("Service Error",error);
       });
   }, []);
 
