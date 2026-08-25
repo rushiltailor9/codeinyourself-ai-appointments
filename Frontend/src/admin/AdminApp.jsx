@@ -43,6 +43,14 @@ import {
   loginUser,
   logoutUser,
 } from '../api/authApi.js';
+import {
+  fetchSettings,
+  saveSettings,
+  fetchTeamMembers,
+  createTeamMember,
+  updateTeamMember,
+  deleteTeamMember,
+} from '../api/settingsApi.js';
 
 export default function AdminApp() {
   const [authChecking, setAuthChecking] = useState(true);
@@ -149,6 +157,31 @@ export default function AdminApp() {
       }
     } catch (e) {
       console.warn('Backend chats fetch notice:', e.message);
+    }
+
+    try {
+      const setRes = await fetchSettings();
+      if (setRes.success && setRes.settings) {
+        setSettings(setRes.settings);
+      }
+    } catch (e) {
+      console.warn('Backend settings fetch notice:', e.message);
+    }
+
+    try {
+      const teamRes = await fetchTeamMembers();
+      if (teamRes.success && Array.isArray(teamRes.teamMembers) && teamRes.teamMembers.length > 0) {
+        const mapped = teamRes.teamMembers.map((t) => ({
+          id: t._id || t.id,
+          name: t.name,
+          role: t.role || 'Team Member',
+          email: t.email || '',
+          color: t.color || '#5CF2A3',
+        }));
+        setTeamMembers(mapped);
+      }
+    } catch (e) {
+      console.warn('Backend team fetch notice:', e.message);
     }
   };
 
@@ -274,14 +307,83 @@ export default function AdminApp() {
     setAppointments((prev) => prev.map((a) => (a.id === aptId ? { ...a, status: 'cancelled' } : a)));
   };
 
-  const handleAddTeamMember = (newMember) => {
-    setTeamMembers((prev) => [...prev, newMember]);
-    toast.success(`Team member ${newMember.name} added.`);
+  const handleAddTeamMember = async (newMember) => {
+    try {
+      const res = await createTeamMember(newMember);
+      if (res.success && res.teamMember) {
+        const created = {
+          id: res.teamMember._id || res.teamMember.id,
+          name: res.teamMember.name,
+          role: res.teamMember.role || 'Team Member',
+          email: res.teamMember.email || '',
+          color: res.teamMember.color || '#5CF2A3',
+        };
+        setTeamMembers((prev) => [...prev, created]);
+      } else {
+        setTeamMembers((prev) => [
+          ...prev,
+          { id: `team-${Date.now()}`, ...newMember },
+        ]);
+      }
+      toast.success(`Team member "${newMember.name}" added successfully.`);
+    } catch (e) {
+      console.warn('Create team member API error:', e.message);
+      setTeamMembers((prev) => [
+        ...prev,
+        { id: `team-${Date.now()}`, ...newMember },
+      ]);
+      toast.success(`Team member "${newMember.name}" added.`);
+    }
   };
 
-  const handleSaveSettings = (newSettings) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
-    toast.success('System settings saved successfully.');
+  const handleUpdateTeamMember = async (memberId, updatedFields) => {
+    try {
+      if (memberId && !memberId.toString().startsWith('team-')) {
+        await updateTeamMember(memberId, updatedFields);
+      }
+      setTeamMembers((prev) =>
+        prev.map((t) => (t.id === memberId ? { ...t, ...updatedFields } : t))
+      );
+      toast.info(`Team member "${updatedFields.name || 'Staff'}" updated successfully.`);
+    } catch (e) {
+      console.warn('Update team member API error:', e.message);
+      setTeamMembers((prev) =>
+        prev.map((t) => (t.id === memberId ? { ...t, ...updatedFields } : t))
+      );
+      toast.info('Team member updated.');
+    }
+  };
+
+  const handleDeleteTeamMember = async (memberId) => {
+    const member = teamMembers.find((t) => t.id === memberId);
+    const memberName = member ? member.name : 'Team member';
+    try {
+      if (memberId && !memberId.toString().startsWith('team-')) {
+        await deleteTeamMember(memberId);
+      }
+      setTeamMembers((prev) => prev.filter((t) => t.id !== memberId));
+      toast.warning(`${memberName} was removed from the team.`);
+    } catch (e) {
+      console.warn('Delete team member API error:', e.message);
+      setTeamMembers((prev) => prev.filter((t) => t.id !== memberId));
+      toast.warning(`${memberName} was removed.`);
+    }
+  };
+
+  const handleSaveSettings = async (newSettings) => {
+    try {
+      const res = await saveSettings(newSettings);
+      if (res.success && res.settings) {
+        setSettings(res.settings);
+      } else {
+        setSettings((prev) => ({ ...prev, ...newSettings }));
+      }
+      toast.success('System settings & working hours saved and synced successfully.');
+    } catch (e) {
+      console.warn('Save settings API error:', e.message);
+      setSettings((prev) => ({ ...prev, ...newSettings }));
+      toast.success('Settings updated locally.');
+    }
   };
 
   const handleOpenClientProfile = (details, name) => {
@@ -536,6 +638,8 @@ export default function AdminApp() {
               teamMembers={teamMembers}
               onSaveSettings={handleSaveSettings}
               onAddTeamMember={handleAddTeamMember}
+              onUpdateTeamMember={handleUpdateTeamMember}
+              onDeleteTeamMember={handleDeleteTeamMember}
             />
           )}
         </div>

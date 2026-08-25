@@ -9,6 +9,7 @@ import ServiceRouter from './routes/ServiceRouter.js';
 import AvailabilityRouter from './routes/AvailabilityRouter.js';
 import AppointmentRouter from './routes/AppointmentRouter.js';
 import NotificationRouter from './routes/NotificationRouter.js';
+import SettingRouter from './routes/SettingRouter.js';
 
 dotenv.config();
 
@@ -56,6 +57,8 @@ app.use('/api/availability', AvailabilityRouter);
 app.use('/api/appointments', AppointmentRouter);
 app.use('/api/admin/appointments', AppointmentRouter);
 app.use('/api/notifications', NotificationRouter);
+app.use('/api/settings', SettingRouter);
+app.use('/api/team', SettingRouter);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

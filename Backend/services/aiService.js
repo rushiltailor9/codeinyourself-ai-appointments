@@ -5,6 +5,8 @@ import AIChat from '../models/AIChat.js';
 import { getAvailableSlots, validateSlotAvailability } from './availabilityService.js';
 import { createAppointment, cancelAppointment, rescheduleAppointment } from './appointmentService.js';
 
+import Setting from '../models/Setting.js';
+
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 // Initialize Google Gemini LLM Client if API Key is configured
@@ -19,23 +21,152 @@ export function getGeminiClient() {
   }
 }
 
+export function getGeminiModelCandidates() {
+  const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+  const defaults = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.6-flash'];
+  return Array.from(new Set([primaryModel, ...defaults]));
+}
+
 /**
- * Helper to call Gemini LLM for conversational enhancements
+ * Helper to call Gemini LLM for conversational enhancements with multi-model quota fallback
  */
 export async function callGemini(prompt, systemInstruction = '') {
   const ai = getGeminiClient();
   if (!ai) return null;
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: systemInstruction ? { systemInstruction } : undefined,
-    });
-    return response.text ? response.text.trim() : null;
-  } catch (err) {
-    console.warn('[Gemini] Fallback triggered:', err.message);
-    return null;
+
+  let effectiveInstruction = systemInstruction;
+  if (!effectiveInstruction) {
+    const setting = await Setting.findOne().catch(() => null);
+    const tone = setting?.aiVoiceTone || 'Friendly, concise, and professional';
+    effectiveInstruction = `You are the official AI appointment scheduling assistant for Nexora Technologies. Speak in a ${tone} tone. Keep responses under 45 words and always guide the client towards booking or managing their consultation.`;
   }
+
+  const models = getGeminiModelCandidates();
+  for (const model of models) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: effectiveInstruction ? { systemInstruction: effectiveInstruction } : undefined,
+      });
+      if (response && response.text) {
+        return response.text.trim();
+      }
+    } catch (err) {
+      console.warn(`[Gemini model ${model} failed]:`, err.message);
+    }
+  }
+  console.warn('[Gemini] All model candidates failed or quota exceeded. Falling back to rule engine.');
+  return null;
+}
+
+/**
+ * Fallback problem analyzer when Gemini API quota is exhausted or client is uninitialized.
+ */
+export function analyzeClientProblemFallback(message, activeServices) {
+  const lower = message.toLowerCase();
+
+  // IT Support Problem Detection (crashes, leaks, CPU, servers, errors)
+  if (lower.includes('crash') || lower.includes('leak') || lower.includes('cpu') || lower.includes('memory') || lower.includes('server') || lower.includes('down') || lower.includes('bug') || lower.includes('slow') || lower.includes('error')) {
+    const matched = activeServices.find((s) => s.name.toLowerCase().includes('support')) || activeServices[0];
+    return {
+      isProblemOrRequirement: true,
+      matchedServiceName: matched.name,
+      technicalAdvice: 'Infrastructure stability issues, server crashes, and memory leaks usually stem from unhandled promise rejections, unclosed database pools, or unoptimized event loops. We can audit your logs and profile memory using APM tools.',
+      responseMessage: `Server crashes and performance bottlenecks require systematic log auditing and memory profiling. We recommend booking our ${matched.name} to troubleshoot and resolve this issue.`,
+    };
+  }
+
+  // Security Audit Detection (vulnerabilities, injection, hacks, SSL)
+  if (lower.includes('security') || lower.includes('hack') || lower.includes('vulnerability') || lower.includes('sql') || lower.includes('xss') || lower.includes('audit') || lower.includes('ssl')) {
+    const matched = activeServices.find((s) => s.name.toLowerCase().includes('security')) || activeServices[0];
+    return {
+      isProblemOrRequirement: true,
+      matchedServiceName: matched.name,
+      technicalAdvice: 'Security vulnerabilities such as SQL injection or XSS can be identified through static code analysis (SAST), automated vulnerability scanning (DAST), and manual penetration testing.',
+      responseMessage: `Protecting your infrastructure against security risks requires automated scanning and manual penetration testing. We recommend booking our ${matched.name} to scope out your security requirements.`,
+    };
+  }
+
+  // Web / Next.js / React Development Detection (websites, e-commerce, SaaS)
+  if (lower.includes('web') || lower.includes('next.js') || lower.includes('react') || lower.includes('website') || lower.includes('app') || lower.includes('stripe') || lower.includes('e-commerce') || lower.includes('build')) {
+    const matched = activeServices.find((s) => s.name.toLowerCase().includes('web')) || activeServices[0];
+    return {
+      isProblemOrRequirement: true,
+      matchedServiceName: matched.name,
+      technicalAdvice: 'Building high-performance modern web apps requires server-side rendering (SSR), optimized API integrations, and robust database state management.',
+      responseMessage: `For building scalable web applications and e-commerce platforms, we specialize in modern tech stacks like Next.js, React, and Stripe. We recommend booking our ${matched.name} to outline your project architecture.`,
+    };
+  }
+
+  // Product Strategy Session Detection (strategy, roadmap, scale)
+  if (lower.includes('strategy') || lower.includes('product') || lower.includes('mvp') || lower.includes('architecture') || lower.includes('roadmap') || lower.includes('scale')) {
+    const matched = activeServices.find((s) => s.name.toLowerCase().includes('strategy')) || activeServices[0];
+    return {
+      isProblemOrRequirement: true,
+      matchedServiceName: matched.name,
+      technicalAdvice: 'Defining product roadmaps and technical architecture requires evaluating data models, scalability boundaries, and core feature priorities.',
+      responseMessage: `Planning scalable products requires defining technical architecture and business milestones. We recommend booking our ${matched.name} to create your product roadmap.`,
+    };
+  }
+
+  return { isProblemOrRequirement: false };
+}
+
+/**
+ * Uses Gemini to understand complex client requirements, diagnose problems, and map to appropriate service.
+ */
+export async function analyzeClientProblemWithGemini(message, activeServices) {
+  const ai = getGeminiClient();
+  if (!ai) {
+    return analyzeClientProblemFallback(message, activeServices);
+  }
+
+  const serviceCatalog = activeServices
+    .map((s) => `- ${s.name} (${s.durationMinutes} mins, ${s.price > 0 ? '$' + s.price : 'Free'}): ${s.description}`)
+    .join('\n');
+
+  const prompt = `
+You are an expert AI Technical Solutions Architect for Nexora Technologies.
+A client has sent the following message: "${message}"
+
+Our Active Services:
+${serviceCatalog}
+
+Analyze the client's problem, question, or requirement:
+1. Provide a direct, expert, helpful technical answer or diagnostic solution to the client's problem (1-2 clear sentences).
+2. Recommend the single most appropriate service from our catalog to address their requirement.
+3. Suggest next booking steps.
+
+Return ONLY a JSON object with this format (no markdown fences, no raw backticks):
+{
+  "isProblemOrRequirement": true,
+  "matchedServiceName": "Web Development Consultation",
+  "technicalAdvice": "Brief expert diagnosis or technical solution explaining how we can solve their problem.",
+  "responseMessage": "The full conversational response answering their question and inviting them to book the recommended service."
+}
+If the message is not a technical/business inquiry (e.g. just saying "yes", "no", "cancel", "hi"), return {"isProblemOrRequirement": false}.
+`;
+
+  const models = getGeminiModelCandidates();
+  for (const model of models) {
+    try {
+      const res = await ai.models.generateContent({
+        model,
+        contents: prompt,
+      });
+
+      if (res && res.text) {
+        const cleanText = res.text.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleanText);
+        return parsed;
+      }
+    } catch (err) {
+      console.warn(`[Gemini Problem Analysis model ${model} failed]:`, err.message);
+    }
+  }
+  console.warn('[Gemini Problem Analysis Fallback]: All models failed or quota exceeded. Executing fallback problem analyzer.');
+  return analyzeClientProblemFallback(message, activeServices);
 }
 
 // Resolve date helper (today, tomorrow, weekday names, or YYYY-MM-DD)
@@ -87,6 +218,17 @@ export function resolveTimeString(text) {
 export function extractEmail(text) {
   const match = text.match(/[\w.+-]+@[\w-]+\.[a-z.]{2,}/i);
   return match ? match[0] : null;
+}
+
+export function extractNameFromMessage(text) {
+  const match = text.match(/(?:for|name is|i am|i'm|this is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+  if (match) {
+    const candidate = match[1].trim();
+    if (!['Web Development', 'IT Support', 'Product Strategy', 'Security Audit'].some(s => candidate.toLowerCase().includes(s.toLowerCase()))) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 /**
@@ -622,6 +764,10 @@ export async function processAIChat({ message, conversationId, user = null }) {
   const extractedEmail = extractEmail(message);
   if (extractedEmail) draft.email = extractedEmail;
 
+  // Extract name
+  const extractedName = extractNameFromMessage(message);
+  if (extractedName) draft.name = extractedName;
+
   // Check if name provided
   if (!draft.name && user?.name) {
     draft.name = user.name;
@@ -630,21 +776,67 @@ export async function processAIChat({ message, conversationId, user = null }) {
     draft.email = user.email;
   }
 
-  // Step 1: Missing Service
-  if (!draft.service) {
-    let customGeminiReply = null;
+  // Step 1: Analyze problem / requirement with Gemini if service not explicitly set or if message is a technical inquiry
+  const isProblemInquiry = !draft.service || lower.includes('crash') || lower.includes('leak') || lower.includes('cpu') || lower.includes('vulnerability') || lower.includes('hack') || lower.includes('fix') || lower.includes('build') || lower.includes('help') || lower.includes('issue') || lower.includes('problem');
+
+  if (isProblemInquiry) {
+    let geminiAnalysis = null;
     if (getGeminiClient()) {
-      customGeminiReply = await callGemini(
-        `A client sent the message: "${message}". We offer: ${serviceNames.join(', ')}. Provide a concise, friendly response under 35 words asking which service they would like to book.`,
-        'You are the official AI booking assistant for Nexora Technologies. Be concise and professional.'
-      );
+      geminiAnalysis = await analyzeClientProblemWithGemini(message, activeServices);
     }
-    const reply = customGeminiReply || `Sure! What service would you like to book? We offer ${serviceNames.join(', ')}.`;
-    chatRecord.messages.push({ sender: 'ai', text: reply });
-    chatRecord.bookingDraft = draft;
-    chatRecord.markModified('bookingDraft');
-    await chatRecord.save();
-    return { success: true, message: reply, conversationId: convId, draft };
+
+    if (geminiAnalysis && geminiAnalysis.isProblemOrRequirement && geminiAnalysis.matchedServiceName) {
+      const matched = activeServices.find(
+        (s) => s.name.toLowerCase() === geminiAnalysis.matchedServiceName.toLowerCase()
+      ) || activeServices[0];
+
+      draft.service = matched.name;
+      draft.serviceId = matched._id;
+      if (geminiAnalysis.technicalAdvice) {
+        draft.technicalAdvice = geminiAnalysis.technicalAdvice;
+      }
+
+      // If user also provided date and time, proceed immediately to validation
+      if (draft.date && draft.time) {
+        // Continue to Step 3 below
+      } else {
+        // Recommend the service with technical problem-solving advice and suggest next open slots
+        let reply = geminiAnalysis.responseMessage;
+        if (!reply) {
+          reply = `${geminiAnalysis.technicalAdvice} We recommend booking our ${matched.name}. What date and time works best for you?`;
+        }
+
+        // Recommend upcoming slots on tomorrow or next day from MongoDB
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowISO = tomorrow.toISOString().split('T')[0];
+        const avail = await getAvailableSlots(tomorrowISO);
+        if (avail.available && avail.slots.length > 0) {
+          const topSlots = avail.slots.slice(0, 3).map((s) => s.startTime).join(', ');
+          reply += ` Open slots tomorrow (${tomorrowISO}): ${topSlots}.`;
+        }
+
+        chatRecord.messages.push({ sender: 'ai', text: reply });
+        chatRecord.bookingDraft = draft;
+        chatRecord.markModified('bookingDraft');
+        await chatRecord.save();
+        return { success: true, message: reply, conversationId: convId, draft };
+      }
+    } else if (!draft.service) {
+      let customGeminiReply = null;
+      if (getGeminiClient()) {
+        customGeminiReply = await callGemini(
+          `A client sent the message: "${message}". We offer: ${serviceNames.join(', ')}. Provide a concise, friendly response under 35 words asking which service they would like to book or describe their requirement.`,
+          'You are the official AI booking assistant for Nexora Technologies. Be concise, expert, and professional.'
+        );
+      }
+      const reply = customGeminiReply || `Sure! What service or technical assistance would you like to book? We offer ${serviceNames.join(', ')}.`;
+      chatRecord.messages.push({ sender: 'ai', text: reply });
+      chatRecord.bookingDraft = draft;
+      chatRecord.markModified('bookingDraft');
+      await chatRecord.save();
+      return { success: true, message: reply, conversationId: convId, draft };
+    }
   }
 
   // Step 2: Missing Date or Time

@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Service from '../models/Service.js';
 import Availability from '../models/Availability.js';
 import User from '../models/User.js';
+import Setting from '../models/Setting.js';
+import TeamMember from '../models/TeamMember.js';
 import bcrypt from 'bcryptjs';
 
 const INITIAL_SERVICES = [
@@ -43,17 +45,23 @@ const INITIAL_AVAILABILITIES = [
   { dayOfWeek: 'Friday', startTime: '09:00', endTime: '18:00', slotDurationMinutes: 30, breaks: [{ startTime: '13:00', endTime: '14:00' }], active: true },
 ];
 
+const INITIAL_TEAM_MEMBERS = [
+  { name: 'Neha Shah', role: 'Lead Engineer', color: '#5CF2A3', email: 'neha@nexora.com', active: true },
+  { name: 'Arjun Mehta', role: 'Solutions Architect', color: '#8FFFC4', email: 'arjun@nexora.com', active: true },
+  { name: 'Priya Nair', role: 'Support Lead', color: '#F2B15C', email: 'priya@nexora.com', active: true },
+];
+
 export async function connectDB() {
   const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/ai_appointment';
   try {
     await mongoose.connect(uri, {
       serverSelectionTimeoutMS: 5000,
     });
-    console.log(`[MongoDB] Connected successfully to ${uri}✅`);
+    console.log(`MongoDB Connected successfully✅`);
     await seedInitialData();
     return true;
   } catch (err) {
-    console.error(`[MongoDB] Connection error: ${err.message}❌`);
+    console.error(`MongoDB Connection error: ${err.message}❌`);
     console.error(`[MongoDB Note] Ensure MongoDB service is started on ${uri}`);
     return false;
   }
@@ -71,6 +79,26 @@ async function seedInitialData() {
     if (availCount === 0) {
       await Availability.insertMany(INITIAL_AVAILABILITIES);
       console.log('[Seed] Inserted initial weekly availability.');
+    }
+
+    const settingCount = await Setting.countDocuments();
+    if (settingCount === 0) {
+      await Setting.create({
+        businessName: 'Nexora Technologies',
+        workingHours: { start: '09:00', end: '18:00' },
+        workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+        aiVoiceTone: 'Friendly and concise',
+        bufferMinutes: 10,
+        reminderTimings: ['24h', '1h'],
+        autoEscalateKeywords: ['urgent', 'down', 'broken', 'not working'],
+      });
+      console.log('[Seed] Inserted default system settings.');
+    }
+
+    const teamCount = await TeamMember.countDocuments();
+    if (teamCount === 0) {
+      await TeamMember.insertMany(INITIAL_TEAM_MEMBERS);
+      console.log('[Seed] Inserted initial team members.');
     }
 
     const adminExists = await User.findOne({ $or: [{ email: 'admin@nexora.com' }, { role: 'admin' }] });
