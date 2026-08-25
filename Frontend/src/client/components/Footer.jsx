@@ -7,7 +7,7 @@ export function Footer({ onOpenModal, dark }) {
       <div className="max-w-6xl mx-auto px-5 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Terminal size={14} className="text-signal" />
-          <span className="font-mono text-xs text-muted">© {new Date().getFullYear()} Codeinyourself IT Company</span>
+          <span className="font-mono text-xs text-muted">© {new Date().getFullYear()} Nexora Technologies</span>
         </div>
         <div className="flex items-center gap-5 text-xs text-muted">
           <button onClick={() => onOpenModal('privacy')} className="hover:text-paper">Privacy</button>

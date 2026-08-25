@@ -14,8 +14,8 @@ export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequ
       id: 'greet',
       sender: 'ai',
       text: user
-        ? `Hi ${user.name ? user.name.split(' ')[0] : 'there'}, I'm the Codeinyourself booking assistant. Tell me what you need and when — e.g. "IT support call tomorrow at 2pm."`
-        : "Welcome to Codeinyourself! Please sign in or register to interact with our AI assistant and book appointments.",
+        ? `Hi ${user.name ? user.name.split(' ')[0] : 'there'}, I'm the Nexora booking assistant. Tell me what you need and when — e.g. "IT support call tomorrow at 2pm."`
+        : "Welcome to Nexora! Please sign in or register to interact with our AI assistant and book appointments.",
     },
   ]);
   const [input, setInput] = useState('');
@@ -29,7 +29,7 @@ export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequ
         {
           id: 'greet',
           sender: 'ai',
-          text: `Hi ${user.name ? user.name.split(' ')[0] : 'there'}, I'm the Codeinyourself booking assistant. Tell me what you need and when — e.g. "IT support call tomorrow at 2pm."`,
+          text: `Hi ${user.name ? user.name.split(' ')[0] : 'there'}, I'm the Nexora booking assistant. Tell me what you need and when — e.g. "IT support call tomorrow at 2pm."`,
         },
       ]);
     } else {
@@ -37,7 +37,7 @@ export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequ
         {
           id: 'greet',
           sender: 'ai',
-          text: "Welcome to Codeinyourself! Please sign in or register to interact with our AI assistant and book appointments.",
+          text: "Welcome to Nexora! Please sign in or register to interact with our AI assistant and book appointments.",
         },
       ]);
     }
@@ -117,7 +117,7 @@ export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequ
         <span className="w-2.5 h-2.5 rounded-full bg-amber/70" />
         <span className="w-2.5 h-2.5 rounded-full bg-signal/70" />
         <span className="ml-2 font-mono text-xs text-muted flex items-center gap-1.5">
-          <Terminal size={12} /> booking-assistant — codeinyourself
+          <Terminal size={12} /> booking-assistant — nexora
         </span>
       </div>
 

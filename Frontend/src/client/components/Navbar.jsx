@@ -18,7 +18,7 @@ export function Navbar({ currentScreen, onNavigate, user, onLogout }) {
           <div className="w-7 h-7 rounded bg-signal/10 border border-signal/40 flex items-center justify-center">
             <Terminal size={15} className="text-signal" />
           </div>
-          <span className="font-mono text-sm text-paper">codeinyourself<span className="text-signal">.</span></span>
+          <span className="font-mono text-sm text-paper">nexora<span className="text-signal">.</span></span>
         </button>
 
         <nav className="hidden md:flex items-center gap-1">
@@ -28,15 +28,15 @@ export function Navbar({ currentScreen, onNavigate, user, onLogout }) {
               <button
                 key={l.id}
                 onClick={() => onNavigate(l.id)}
-                className={`px-3 py-2 text-sm rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  isActive ? 'text-signal font-semibold bg-signal/10 border border-signal/20' : 'text-muted hover:text-paper hover:bg-ink-800'
-                }`}
+                className={`px-3 py-2 text-sm rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${isActive ? 'text-signal font-semibold bg-signal/10 border border-signal/20' : 'text-muted hover:text-paper hover:bg-ink-800'
+                  }`}
               >
                 {l.id === 'portal' && <CalendarCheck size={14} className={isActive ? 'text-signal' : 'text-muted'} />}
                 <span>{l.label}</span>
               </button>
             );
           })}
+
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
@@ -77,9 +77,8 @@ export function Navbar({ currentScreen, onNavigate, user, onLogout }) {
             <button
               key={l.id}
               onClick={() => { onNavigate(l.id); setOpen(false); }}
-              className={`block w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
-                currentScreen === l.id ? 'text-signal font-semibold bg-signal/10' : 'text-muted hover:text-paper'
-              }`}
+              className={`block w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${currentScreen === l.id ? 'text-signal font-semibold bg-signal/10' : 'text-muted hover:text-paper'
+                }`}
             >
               {l.label}
             </button>

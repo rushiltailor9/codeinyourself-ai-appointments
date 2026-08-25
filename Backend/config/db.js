@@ -73,18 +73,18 @@ async function seedInitialData() {
       console.log('[Seed] Inserted initial weekly availability.');
     }
 
-    const adminExists = await User.findOne({ role: 'admin' });
+    const adminExists = await User.findOne({ $or: [{ email: 'admin@nexora.com' }, { role: 'admin' }] });
     if (!adminExists) {
       const hashedPassword = await bcrypt.hash('admin123', 10);
       await User.create({
         name: 'Admin Manager',
-        email: 'admin@codeinyourself.com',
+        email: 'admin@nexora.com',
         phone: '+1-555-0100',
         password: hashedPassword,
         role: 'admin',
         status: 'active',
       });
-      console.log('[Seed] Default admin account created (admin@codeinyourself.com / admin123).');
+      console.log('[Seed] Default admin account created (admin@nexora.com / admin123).');
     }
   } catch (error) {
     console.error('[Seed] Warning during database seeding:', error.message);

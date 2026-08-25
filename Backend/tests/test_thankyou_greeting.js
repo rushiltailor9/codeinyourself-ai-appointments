@@ -36,7 +36,7 @@ async function runThankYouGreetingTests() {
     user: testUser,
   });
   console.log('   AI Response:', res2.message);
-  console.log('   Check 4 (Response contains courteous greeting/parting message):', res2.message.includes('Codeinyourself') ? 'PASS' : 'FAIL');
+  console.log('   Check 4 (Response contains courteous greeting/parting message):', res2.message.includes('Nexora') ? 'PASS' : 'FAIL');
 
   // 3. Test "Thanks a lot"
   console.log('\n3. User input: "Thanks a lot"');
@@ -57,7 +57,7 @@ async function runThankYouGreetingTests() {
     user: testUser,
   });
   console.log('   AI Response:', res4.message);
-  console.log('   Check 6 (Greeting message):', res4.message.includes('Welcome to Codeinyourself') ? 'PASS' : 'FAIL');
+  console.log('   Check 6 (Greeting message):', res4.message.includes('Welcome to Nexora') ? 'PASS' : 'FAIL');
 
   console.log('\n--- ALL THANK YOU & GREETING TESTS COMPLETED ---');
   await mongoose.disconnect();

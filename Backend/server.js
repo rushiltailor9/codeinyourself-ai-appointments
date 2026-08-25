@@ -43,7 +43,7 @@ app.use(express.urlencoded({ extended: true }));
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
-    service: 'Codeinyourself AI Appointments API',
+    service: 'Nexora AI Appointments API',
     timestamp: new Date().toISOString(),
   });
 });
@@ -71,7 +71,7 @@ async function startServer(retries = 3) {
   await connectDB();
 
   const server = app.listen(PORT, () => {
-    console.log(`[Server] Codeinyourself AI Appointments API listening on port ${PORT}`);
+    console.log(`[Server] Nexora AI Appointments API listening on port ${PORT}`);
   });
 
   server.on('error', (err) => {

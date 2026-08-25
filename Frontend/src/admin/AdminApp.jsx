@@ -46,7 +46,7 @@ import {
 export default function AdminApp() {
   const [authChecking, setAuthChecking] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
-  const [adminLoginForm, setAdminLoginForm] = useState({ email: 'admin@codeinyourself.com', password: '' });
+  const [adminLoginForm, setAdminLoginForm] = useState({ email: 'admin@nexora.com', password: '' });
   const [adminLoginError, setAdminLoginError] = useState('');
   const [adminLoginLoading, setAdminLoginLoading] = useState(false);
 
@@ -287,7 +287,7 @@ export default function AdminApp() {
       case 'chat-logs': return 'Live AI Conversation Logs';
       case 'services': return 'Services & Offering Configuration';
       case 'settings': return 'AI Voice, Logic & System Settings';
-      default: return 'Codeinyourself AI Booking Admin';
+      default: return 'Nexora AI Booking Admin';
     }
   };
 
@@ -346,7 +346,7 @@ export default function AdminApp() {
               <Terminal size={17} className="text-signal" />
             </div>
             <div>
-              <p className="font-mono text-sm text-paper font-semibold">codeinyourself<span className="text-signal">.</span></p>
+              <p className="font-mono text-sm text-paper font-semibold">nexora<span className="text-signal">.</span></p>
               <p className="text-[10px] text-muted -mt-0.5">operations console</p>
             </div>
           </div>
@@ -399,7 +399,7 @@ export default function AdminApp() {
                     type="email"
                     value={adminLoginForm.email}
                     onChange={(e) => setAdminLoginForm({ ...adminLoginForm, email: e.target.value })}
-                    placeholder="admin@codeinyourself.com"
+                    placeholder="admin@nexora.com"
                     className="w-full bg-ink-950 border border-ink-600 rounded-md px-3 py-2 text-sm text-paper placeholder:text-muted focus:outline-none focus:border-signal/60 font-sans"
                   />
                 </div>

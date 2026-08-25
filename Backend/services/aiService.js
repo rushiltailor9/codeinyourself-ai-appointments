@@ -485,7 +485,7 @@ export async function processAIChat({ message, conversationId, user = null }) {
   ) {
     const clientName = user?.name?.split(' ')[0] || draft.name?.split(' ')[0] || '';
     const greetingName = clientName ? `, ${clientName}` : '';
-    const reply = `You're very welcome${greetingName}! Thank you for choosing Codeinyourself IT Services. We look forward to assisting you. Wishing you a great day ahead! If you need anything else, feel free to reach out anytime.`;
+    const reply = `You're very welcome${greetingName}! Thank you for choosing Nexora Technologies. We look forward to assisting you. Wishing you a great day ahead! If you need anything else, feel free to reach out anytime.`;
     chatRecord.messages.push({ sender: 'ai', text: reply });
     await chatRecord.save();
     return { success: true, message: reply, conversationId: convId, draft };
@@ -507,7 +507,7 @@ export async function processAIChat({ message, conversationId, user = null }) {
   ) {
     const clientName = user?.name?.split(' ')[0] || draft.name?.split(' ')[0] || '';
     const greetingName = clientName ? ` ${clientName}` : '';
-    const reply = `Hello${greetingName}! Welcome to Codeinyourself IT Company. How can I assist you today? You can schedule a consultation, manage your appointments, or ask about our available services.`;
+    const reply = `Hello${greetingName}! Welcome to Nexora Technologies. How can I assist you today? You can schedule a consultation, manage your appointments, or ask about our available services.`;
     chatRecord.messages.push({ sender: 'ai', text: reply });
     await chatRecord.save();
     return { success: true, message: reply, conversationId: convId, draft };
@@ -563,7 +563,7 @@ export async function processAIChat({ message, conversationId, user = null }) {
     if (getGeminiClient()) {
       customGeminiReply = await callGemini(
         `A client sent the message: "${message}". We offer: ${serviceNames.join(', ')}. Provide a concise, friendly response under 35 words asking which service they would like to book.`,
-        'You are the official AI booking assistant for Codeinyourself IT Company. Be concise and professional.'
+        'You are the official AI booking assistant for Nexora Technologies. Be concise and professional.'
       );
     }
     const reply = customGeminiReply || `Sure! What service would you like to book? We offer ${serviceNames.join(', ')}.`;

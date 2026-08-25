@@ -87,7 +87,7 @@ export function LoginScreen({ onLoginSuccess, onBackToHome }) {
               <Terminal size={15} className="text-signal" />
             </div>
             <span className="font-mono text-sm text-paper">
-              codeinyourself<span className="text-signal">.</span>
+              nexora<span className="text-signal">.</span>
             </span>
           </div>
 

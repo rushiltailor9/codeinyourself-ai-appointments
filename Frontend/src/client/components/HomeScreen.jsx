@@ -16,7 +16,7 @@ export function HomeScreen({
       <section className="relative overflow-hidden bg-ink-900 bg-grid bg-grid border-b border-ink-700">
         <div className="max-w-6xl mx-auto px-5 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
           <div>
-            <p className="font-mono text-xs text-signal mb-4">// codeinyourself IT company</p>
+            <p className="font-mono text-xs text-signal mb-4">// nexora technologies</p>
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-paper leading-tight mb-5">
               Book a slot with our team<br /> by just <span className="text-signal">describing it</span>.
             </h1>

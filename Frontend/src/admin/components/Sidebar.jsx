@@ -35,7 +35,7 @@ export default function Sidebar({
               <Terminal size={15} className="text-signal" />
             </div>
             <div className="leading-tight">
-              <p className="font-mono text-[13px] text-paper">codeinyourself</p>
+              <p className="font-mono text-[13px] text-paper">nexora</p>
               <p className="text-[10px] text-muted -mt-0.5">ops console</p>
             </div>
           </div>

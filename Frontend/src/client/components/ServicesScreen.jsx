@@ -36,7 +36,7 @@ export function ServicesScreen({ onSelectServiceForBooking }) {
           <div key={s.name} className="bg-ink-800 border border-ink-700 rounded-lg p-6 flex flex-col">
             <h3 className="text-paper font-medium text-lg mb-2">{s.name}</h3>
             <p className="text-sm text-muted flex items-center gap-1.5 mb-6">
-              <Clock size={13} /> {s.duration} minutes {s.price > 0 ? `• $${s.price}` : ''}
+              <Clock size={13} /> {s.duration} minutes {s.price > 0 ? `• ₹${s.price}` : ''}
             </p>
             <button
               onClick={() => onSelectServiceForBooking(s.name)}

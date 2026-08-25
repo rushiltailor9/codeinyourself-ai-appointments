@@ -139,7 +139,7 @@ export const INITIAL_CHATS = [
 ];
 
 export const INITIAL_SETTINGS = {
-  businessName: 'Codeinyourself IT Company',
+  businessName: 'Nexora Technologies',
   workingHours: { start: '09:00', end: '18:00' },
   workingDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
   aiVoiceTone: 'Friendly and concise',
