@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Send, Terminal, Sparkles } from 'lucide-react';
 import { sendChatMessage } from '../../api/aiApi.js';
 
@@ -86,6 +87,12 @@ export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequ
       }
       pushMessage('ai', result.message || 'I processed your request.');
       setThinking(false);
+
+      if (result.message && result.message.includes('successfully cancelled')) {
+        toast.warning('Appointment slot has been cancelled.');
+      } else if (result.message && result.message.includes('successfully updated to')) {
+        toast.success('Appointment updated to new date/time.');
+      }
 
       if (result.done && result.booking) {
         onBookingConfirmed({
