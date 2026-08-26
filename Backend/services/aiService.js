@@ -4,7 +4,6 @@ import Appointment from '../models/Appointment.js';
 import AIChat from '../models/AIChat.js';
 import { getAvailableSlots, validateSlotAvailability } from './availabilityService.js';
 import { createAppointment, cancelAppointment, rescheduleAppointment } from './appointmentService.js';
-
 import Setting from '../models/Setting.js';
 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -28,7 +27,7 @@ export function getGeminiModelCandidates() {
 }
 
 /**
- * Helper to call Gemini LLM for conversational enhancements with multi-model quota fallback
+ * Helper to call Gemini LLM for conversational responses with multi-model quota fallback
  */
 export async function callGemini(prompt, systemInstruction = '') {
   const ai = getGeminiClient();
@@ -38,7 +37,7 @@ export async function callGemini(prompt, systemInstruction = '') {
   if (!effectiveInstruction) {
     const setting = await Setting.findOne().catch(() => null);
     const tone = setting?.aiVoiceTone || 'Friendly, concise, and professional';
-    effectiveInstruction = `You are the official AI appointment scheduling assistant for Nexora Technologies. Speak in a ${tone} tone. Keep responses under 45 words and always guide the client towards booking or managing their consultation.`;
+    effectiveInstruction = `You are the official AI appointment scheduling assistant for Nexora Technologies. Speak in a ${tone} tone. Keep responses clear and under 50 words.`;
   }
 
   const models = getGeminiModelCandidates();
@@ -56,163 +55,168 @@ export async function callGemini(prompt, systemInstruction = '') {
       console.warn(`[Gemini model ${model} failed]:`, err.message);
     }
   }
-  console.warn('[Gemini] All model candidates failed or quota exceeded. Falling back to rule engine.');
   return null;
 }
 
-/**
- * Fallback problem analyzer when Gemini API quota is exhausted or client is uninitialized.
- */
-export function analyzeClientProblemFallback(message, activeServices) {
-  const lower = message.toLowerCase();
+// ----------------------------------------------------------------------
+// NATURAL LANGUAGE DATE & TIME PARSERS
+// ----------------------------------------------------------------------
 
-  // IT Support Problem Detection (crashes, leaks, CPU, servers, errors)
-  if (lower.includes('crash') || lower.includes('leak') || lower.includes('cpu') || lower.includes('memory') || lower.includes('server') || lower.includes('down') || lower.includes('bug') || lower.includes('slow') || lower.includes('error')) {
-    const matched = activeServices.find((s) => s.name.toLowerCase().includes('support')) || activeServices[0];
-    return {
-      isProblemOrRequirement: true,
-      matchedServiceName: matched.name,
-      technicalAdvice: 'Infrastructure stability issues, server crashes, and memory leaks usually stem from unhandled promise rejections, unclosed database pools, or unoptimized event loops. We can audit your logs and profile memory using APM tools.',
-      responseMessage: `Server crashes and performance bottlenecks require systematic log auditing and memory profiling. We recommend booking our ${matched.name} to troubleshoot and resolve this issue.`,
-    };
+export function resolveDateString(text, refDate = new Date()) {
+  if (!text) return null;
+  const lower = text.toLowerCase().trim();
+
+  // 1. "day after tomorrow"
+  if (lower.includes('day after tomorrow') || lower.includes('day after tomorow')) {
+    const d = new Date(refDate);
+    d.setDate(d.getDate() + 2);
+    return d.toISOString().split('T')[0];
   }
 
-  // Security Audit Detection (vulnerabilities, injection, hacks, SSL)
-  if (lower.includes('security') || lower.includes('hack') || lower.includes('vulnerability') || lower.includes('sql') || lower.includes('xss') || lower.includes('audit') || lower.includes('ssl')) {
-    const matched = activeServices.find((s) => s.name.toLowerCase().includes('security')) || activeServices[0];
-    return {
-      isProblemOrRequirement: true,
-      matchedServiceName: matched.name,
-      technicalAdvice: 'Security vulnerabilities such as SQL injection or XSS can be identified through static code analysis (SAST), automated vulnerability scanning (DAST), and manual penetration testing.',
-      responseMessage: `Protecting your infrastructure against security risks requires automated scanning and manual penetration testing. We recommend booking our ${matched.name} to scope out your security requirements.`,
-    };
-  }
-
-  // Web / Next.js / React Development Detection (websites, e-commerce, SaaS)
-  if (lower.includes('web') || lower.includes('next.js') || lower.includes('react') || lower.includes('website') || lower.includes('app') || lower.includes('stripe') || lower.includes('e-commerce') || lower.includes('build')) {
-    const matched = activeServices.find((s) => s.name.toLowerCase().includes('web')) || activeServices[0];
-    return {
-      isProblemOrRequirement: true,
-      matchedServiceName: matched.name,
-      technicalAdvice: 'Building high-performance modern web apps requires server-side rendering (SSR), optimized API integrations, and robust database state management.',
-      responseMessage: `For building scalable web applications and e-commerce platforms, we specialize in modern tech stacks like Next.js, React, and Stripe. We recommend booking our ${matched.name} to outline your project architecture.`,
-    };
-  }
-
-  // Product Strategy Session Detection (strategy, roadmap, scale)
-  if (lower.includes('strategy') || lower.includes('product') || lower.includes('mvp') || lower.includes('architecture') || lower.includes('roadmap') || lower.includes('scale')) {
-    const matched = activeServices.find((s) => s.name.toLowerCase().includes('strategy')) || activeServices[0];
-    return {
-      isProblemOrRequirement: true,
-      matchedServiceName: matched.name,
-      technicalAdvice: 'Defining product roadmaps and technical architecture requires evaluating data models, scalability boundaries, and core feature priorities.',
-      responseMessage: `Planning scalable products requires defining technical architecture and business milestones. We recommend booking our ${matched.name} to create your product roadmap.`,
-    };
-  }
-
-  return { isProblemOrRequirement: false };
-}
-
-/**
- * Uses Gemini to understand complex client requirements, diagnose problems, and map to appropriate service.
- */
-export async function analyzeClientProblemWithGemini(message, activeServices) {
-  const ai = getGeminiClient();
-  if (!ai) {
-    return analyzeClientProblemFallback(message, activeServices);
-  }
-
-  const serviceCatalog = activeServices
-    .map((s) => `- ${s.name} (${s.durationMinutes} mins, ${s.price > 0 ? '$' + s.price : 'Free'}): ${s.description}`)
-    .join('\n');
-
-  const prompt = `
-You are an expert AI Technical Solutions Architect for Nexora Technologies.
-A client has sent the following message: "${message}"
-
-Our Active Services:
-${serviceCatalog}
-
-Analyze the client's problem, question, or requirement:
-1. Provide a direct, expert, helpful technical answer or diagnostic solution to the client's problem (1-2 clear sentences).
-2. Recommend the single most appropriate service from our catalog to address their requirement.
-3. Suggest next booking steps.
-
-Return ONLY a JSON object with this format (no markdown fences, no raw backticks):
-{
-  "isProblemOrRequirement": true,
-  "matchedServiceName": "Web Development Consultation",
-  "technicalAdvice": "Brief expert diagnosis or technical solution explaining how we can solve their problem.",
-  "responseMessage": "The full conversational response answering their question and inviting them to book the recommended service."
-}
-If the message is not a technical/business inquiry (e.g. just saying "yes", "no", "cancel", "hi"), return {"isProblemOrRequirement": false}.
-`;
-
-  const models = getGeminiModelCandidates();
-  for (const model of models) {
-    try {
-      const res = await ai.models.generateContent({
-        model,
-        contents: prompt,
-      });
-
-      if (res && res.text) {
-        const cleanText = res.text.replace(/```json/gi, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleanText);
-        return parsed;
-      }
-    } catch (err) {
-      console.warn(`[Gemini Problem Analysis model ${model} failed]:`, err.message);
-    }
-  }
-  console.warn('[Gemini Problem Analysis Fallback]: All models failed or quota exceeded. Executing fallback problem analyzer.');
-  return analyzeClientProblemFallback(message, activeServices);
-}
-
-// Resolve date helper (today, tomorrow, weekday names, or YYYY-MM-DD)
-export function resolveDateString(text) {
-  const lower = text.toLowerCase();
-  const today = new Date();
-
+  // 2. "today"
   if (lower.includes('today')) {
-    return today.toISOString().split('T')[0];
+    return refDate.toISOString().split('T')[0];
   }
+
+  // 3. "tomorrow" / "tomorow"
   if (lower.includes('tomorrow') || lower.includes('tomorow')) {
-    const d = new Date(today);
+    const d = new Date(refDate);
     d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   }
+
+  // 4. ISO format YYYY-MM-DD
+  const isoMatch = lower.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const m = String(parseInt(isoMatch[2], 10)).padStart(2, '0');
+    const d = String(parseInt(isoMatch[3], 10)).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // 5. Format DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = lower.match(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/);
+  if (dmyMatch) {
+    const d = String(parseInt(dmyMatch[1], 10)).padStart(2, '0');
+    const m = String(parseInt(dmyMatch[2], 10)).padStart(2, '0');
+    const y = parseInt(dmyMatch[3], 10);
+    return `${y}-${m}-${d}`;
+  }
+
+  // 6. Explicit month names: "27 August", "August 27", "27th of August", "August 27th"
+  const monthsMap = {
+    jan: 0, january: 0,
+    feb: 1, february: 1,
+    mar: 2, march: 2,
+    apr: 3, april: 3,
+    may: 4,
+    jun: 5, june: 5,
+    jul: 6, july: 6,
+    aug: 7, august: 7,
+    sep: 8, september: 8,
+    oct: 9, october: 9,
+    nov: 10, november: 10,
+    dec: 11, december: 11,
+  };
+
+  const monthPattern = Object.keys(monthsMap).join('|');
+  const dayFirstMatch = lower.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${monthPattern})\\b(?:\\s+(\\d{4}))?`, 'i'));
+  if (dayFirstMatch) {
+    const day = parseInt(dayFirstMatch[1], 10);
+    const month = monthsMap[dayFirstMatch[2].toLowerCase()];
+    const year = dayFirstMatch[3] ? parseInt(dayFirstMatch[3], 10) : refDate.getFullYear();
+    const d = new Date(year, month, day);
+    const yStr = d.getFullYear();
+    const mStr = String(d.getMonth() + 1).padStart(2, '0');
+    const dStr = String(d.getDate()).padStart(2, '0');
+    return `${yStr}-${mStr}-${dStr}`;
+  }
+
+  const monthFirstMatch = lower.match(new RegExp(`\\b(${monthPattern})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(\\d{4}))?`, 'i'));
+  if (monthFirstMatch) {
+    const month = monthsMap[monthFirstMatch[1].toLowerCase()];
+    const day = parseInt(monthFirstMatch[2], 10);
+    const year = monthFirstMatch[3] ? parseInt(monthFirstMatch[3], 10) : refDate.getFullYear();
+    const d = new Date(year, month, day);
+    const yStr = d.getFullYear();
+    const mStr = String(d.getMonth() + 1).padStart(2, '0');
+    const dStr = String(d.getDate()).padStart(2, '0');
+    return `${yStr}-${mStr}-${dStr}`;
+  }
+
+  // 7. Weekdays ("Friday", "next Friday", "this Monday")
   for (let i = 0; i < WEEKDAYS.length; i++) {
-    if (lower.includes(WEEKDAYS[i])) {
-      const todayIdx = today.getDay();
+    const dayName = WEEKDAYS[i];
+    if (lower.includes(dayName)) {
+      const todayIdx = refDate.getDay();
       let diff = i - todayIdx;
-      if (diff <= 0) diff += 7; // Next occurrence
-      const d = new Date(today);
-      d.setDate(today.getDate() + diff);
+      if (lower.includes('next ' + dayName)) {
+        if (diff <= 0) diff += 7;
+        diff += 7;
+      } else {
+        if (diff <= 0) diff += 7;
+      }
+      const d = new Date(refDate);
+      d.setDate(refDate.getDate() + diff);
       return d.toISOString().split('T')[0];
     }
   }
-  const explicit = lower.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (explicit) return explicit[0];
 
   return null;
 }
 
-// Extract time helper (3pm, 15:00, 3:30 pm, 11am, 14:00, 2pm)
 export function resolveTimeString(text) {
-  // Strip out any full YYYY-MM-DD date strings so numbers from year/month don't get misparsed as hours
-  const textWithoutDates = text.replace(/\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b/g, '');
-  const match = textWithoutDates.toLowerCase().match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
-  if (!match) return null;
-  let hour = parseInt(match[1], 10);
-  const minute = match[2] ? parseInt(match[2], 10) : 0;
-  const meridian = match[3] ? match[3].toLowerCase() : null;
+  if (!text) return null;
+  const lower = text.toLowerCase();
 
-  if (hour > 23) return null;
-  if (meridian === 'pm' && hour < 12) hour += 12;
-  if (meridian === 'am' && hour === 12) hour = 0;
-  if (!meridian && hour < 8) hour += 12; // Assume afternoon if 1-7 without am/pm
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  // Strip dates (ISO dates, DD/MM/YYYY, and month name expressions like "27 august", "august 27th")
+  const textWithoutDates = lower
+    .replace(/\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b/g, '')
+    .replace(/\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b/g, '')
+    .replace(/\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|september|oct|october|nov|november|dec|december)\b/gi, '')
+    .replace(/\b(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|september|oct|october|nov|november|dec|december)\s+\d{1,2}(?:st|nd|rd|th)?\b/gi, '');
+
+  // 1. First priority: explicit meridian match (e.g. "3 PM", "11 AM", "3:30 pm")
+  const meridianMatch = textWithoutDates.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  if (meridianMatch) {
+    let hour = parseInt(meridianMatch[1], 10);
+    const minute = meridianMatch[2] ? parseInt(meridianMatch[2], 10) : 0;
+    const meridian = meridianMatch[3].toLowerCase();
+
+    if (hour >= 1 && hour <= 12 && minute <= 59) {
+      if (meridian === 'pm' && hour < 12) hour += 12;
+      if (meridian === 'am' && hour === 12) hour = 0;
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+  }
+
+  // 2. Second priority: 24-hour format or explicit "at HH:MM" / "at HH"
+  const timeMatch = textWithoutDates.match(/\b(?:at|around|for)?\s*(\d{1,2})(?::(\d{2}))\b/i);
+  if (timeMatch) {
+    let hour = parseInt(timeMatch[1], 10);
+    const minute = parseInt(timeMatch[2], 10);
+    if (hour <= 23 && minute <= 59) {
+      if (hour < 8) hour += 12; // Assume afternoon for 1-7 without am/pm
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+  }
+
+  // 3. Third priority: "at 3" or "around 4" (single hour number between 1 and 23)
+  const hourMatch = textWithoutDates.match(/\b(?:at|around|for)\s+(\d{1,2})\b/i);
+  if (hourMatch) {
+    let hour = parseInt(hourMatch[1], 10);
+    if (hour >= 1 && hour <= 23) {
+      if (hour < 8) hour += 12;
+      return `${String(hour).padStart(2, '0')}:00`;
+    }
+  }
+
+  // 4. Relative time of day expressions
+  if (lower.includes('morning')) return '10:00';
+  if (lower.includes('afternoon')) return '14:00';
+  if (lower.includes('evening')) return '17:00';
+
+  return null;
 }
 
 export function extractEmail(text) {
@@ -231,13 +235,223 @@ export function extractNameFromMessage(text) {
   return null;
 }
 
-/**
- * Main AI Chat Processor with Tool Calling and Database Validation
- */
+// ----------------------------------------------------------------------
+// SERVICE MATCHING
+// ----------------------------------------------------------------------
+
+export function matchServiceFuzzy(text, activeServices) {
+  if (!text || !activeServices || activeServices.length === 0) return null;
+  const lower = text.toLowerCase();
+
+  // 1. Match exact or substring of active service names
+  for (const s of activeServices) {
+    if (lower.includes(s.name.toLowerCase())) {
+      return s;
+    }
+  }
+
+  // 2. IT Consultation / Support mapping
+  if (lower.includes('it consultation') || lower.includes('it consult') || lower.includes('it support') || lower.includes('technical support') || (lower.includes('it') && (lower.includes('consult') || lower.includes('support')))) {
+    const matched = activeServices.find(s => s.name.toLowerCase().includes('it consultation') || s.name.toLowerCase().includes('it support') || s.name.toLowerCase().startsWith('it '));
+    if (matched) return matched;
+    const fallbackIt = activeServices.find(s => s.name.toLowerCase().includes('support') || s.name.toLowerCase().includes('technical'));
+    if (fallbackIt) return fallbackIt;
+  }
+
+  // 3. Web Development / Consultation mapping
+  if (lower.includes('web consultation') || lower.includes('web dev') || lower.includes('website') || lower.includes('web development') || lower.includes('web') || lower.includes('app') || lower.includes('react') || lower.includes('next.js')) {
+    const matched = activeServices.find(s => s.name.toLowerCase().includes('web') || s.name.toLowerCase().includes('software'));
+    if (matched) return matched;
+  }
+
+  // 4. Security mapping
+  if (lower.includes('security') || lower.includes('audit') || lower.includes('vulnerability') || lower.includes('hack') || lower.includes('penetration')) {
+    const matched = activeServices.find(s => s.name.toLowerCase().includes('security') || s.name.toLowerCase().includes('audit'));
+    if (matched) return matched;
+  }
+
+  // 5. Strategy mapping
+  if (lower.includes('strategy') || lower.includes('roadmap') || lower.includes('architecture') || /\bproduct\b/i.test(lower)) {
+    const matched = activeServices.find(s => s.name.toLowerCase().includes('strategy'));
+    if (matched) return matched;
+  }
+
+  // If no service keyword matched, return null
+  return null;
+}
+
+// ----------------------------------------------------------------------
+// INTENT & ENTITY EXTRACTION ENGINE (GEMINI + NLP FALLBACK)
+// ----------------------------------------------------------------------
+
+export async function detectIntentAndEntities(message, activeServices, currentDraft = {}) {
+  const lower = message.toLowerCase().trim();
+
+  // Affirmative check
+  const isAffirmative = ['yes', 'confirm', 'sure', 'sounds good', 'yes please', 'ok', 'okay', 'book it', 'proceed', 'that\'s correct', 'go ahead'].some(w => lower === w || lower.startsWith(w));
+
+  // Negative check
+  const isNegative = ['no', 'no thanks', 'no thank you', 'not now', 'nope', 'nah', 'nevermind', 'never mind', "don't book", "dont book", 'cancel', 'i changed my mind'].some(w => lower === w || lower.startsWith(w));
+
+  // 1. Try Gemini LLM for structured analysis
+  const ai = getGeminiClient();
+  if (ai) {
+    const serviceCatalog = activeServices.map(s => s.name).join(', ');
+    const prompt = `
+Analyze the user message in an AI appointment scheduling context.
+User Message: "${message}"
+Current Draft State: ${JSON.stringify(currentDraft)}
+Available Services: [${serviceCatalog}]
+
+Determine the user's INTENT from:
+BOOK_APPOINTMENT, CHECK_AVAILABILITY, VIEW_APPOINTMENTS, CANCEL_APPOINTMENT, RESCHEDULE_APPOINTMENT, LIST_SERVICES, GENERAL_QUESTION, GREETING, CONFIRM_APPOINTMENT, REJECT_APPOINTMENT, CHANGE_APPOINTMENT_DETAILS, UNKNOWN
+
+Extract available parameters:
+- service (match available services if applicable)
+- date (YYYY-MM-DD format if date mentioned)
+- time (HH:mm format if time mentioned)
+- isChangeRequest (boolean, true if modifying previously stated details like "actually 5 PM")
+
+Return ONLY JSON format without markdown code fences:
+{
+  "intent": "BOOK_APPOINTMENT",
+  "service": "IT Consultation",
+  "date": "2026-08-27",
+  "time": "15:00",
+  "isChangeRequest": false
+}
+`;
+    const models = getGeminiModelCandidates();
+    for (const model of models) {
+      try {
+        const res = await ai.models.generateContent({ model, contents: prompt });
+        if (res && res.text) {
+          const cleanText = res.text.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const parsed = JSON.parse(cleanText);
+          if (parsed && parsed.intent) {
+            const localServiceObj = parsed.service ? matchServiceFuzzy(parsed.service, activeServices) : matchServiceFuzzy(message, activeServices);
+            const localDate = parsed.date || resolveDateString(message);
+            const localTime = parsed.time || resolveTimeString(message);
+
+            return {
+              intent: parsed.intent,
+              service: localServiceObj ? localServiceObj.name : null,
+              serviceId: localServiceObj ? localServiceObj._id : null,
+              date: localDate,
+              time: localTime,
+              isChangeRequest: parsed.isChangeRequest || false,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn(`[Gemini Intent Model ${model} failed]:`, err.message);
+      }
+    }
+  }
+
+  // 2. Rule-based NLP Fallback
+  let intent = 'UNKNOWN';
+
+  if (isAffirmative && (currentDraft.awaitingConfirmation || currentDraft.pendingAction === 'CANCEL_CONFIRMATION')) {
+    intent = 'CONFIRM_APPOINTMENT';
+  } else if (isNegative) {
+    intent = 'REJECT_APPOINTMENT';
+  } else if (
+    lower.includes('cancel') ||
+    lower.includes('don\'t want the appointment') ||
+    lower.includes('cancel my appointment')
+  ) {
+    intent = 'CANCEL_APPOINTMENT';
+  } else if (
+    lower.includes('reschedule') ||
+    lower.includes('move my appointment') ||
+    lower.includes('change my appointment') ||
+    lower.includes('update my appointment') ||
+    lower.includes('update appointment') ||
+    lower.includes('update my appointment time') ||
+    lower.includes('update slot') ||
+    lower.includes('update booking') ||
+    (lower.includes('move it to') && currentDraft.targetAppointmentId) ||
+    currentDraft.pendingAction === 'RESCHEDULE_INPUT'
+  ) {
+    intent = 'RESCHEDULE_APPOINTMENT';
+  } else if (
+    lower.includes('change') ||
+    lower.includes('actually') ||
+    lower.includes('instead') ||
+    lower.includes('make it')
+  ) {
+    intent = 'CHANGE_APPOINTMENT_DETAILS';
+  } else if (
+    lower.includes('my appointments') ||
+    lower.includes('upcoming appointments') ||
+    lower.includes('show my appointments') ||
+    lower.includes('view my appointments')
+  ) {
+    intent = 'VIEW_APPOINTMENTS';
+  } else if (
+    lower.includes('available slot') ||
+    lower.includes('open slot') ||
+    lower.includes('suggest slot') ||
+    lower.includes('what time') ||
+    lower.includes('free slot')
+  ) {
+    intent = 'CHECK_AVAILABILITY';
+  } else if (
+    lower.includes('what services') ||
+    lower.includes('list services') ||
+    lower.includes('services do you offer')
+  ) {
+    intent = 'LIST_SERVICES';
+  } else if (
+    lower === 'hi' ||
+    lower === 'hello' ||
+    lower === 'hey' ||
+    lower.startsWith('hi ') ||
+    lower.startsWith('hello ') ||
+    lower.startsWith('hey ') ||
+    lower.includes('good morning') ||
+    lower.includes('good afternoon')
+  ) {
+    intent = 'GREETING';
+  } else if (
+    lower.includes('book') ||
+    lower.includes('appointment') ||
+    lower.includes('consultation') ||
+    lower.includes('meet') ||
+    lower.includes('need') ||
+    lower.includes('want') ||
+    resolveDateString(message) ||
+    resolveTimeString(message) ||
+    matchServiceFuzzy(message, activeServices)
+  ) {
+    intent = 'BOOK_APPOINTMENT';
+  } else if (lower.includes('thank') || lower.includes('price') || lower.includes('cost') || lower.includes('where')) {
+    intent = 'GENERAL_QUESTION';
+  }
+
+  const serviceObj = matchServiceFuzzy(message, activeServices);
+  const dateStr = resolveDateString(message);
+  const timeStr = resolveTimeString(message);
+
+  return {
+    intent,
+    service: serviceObj ? serviceObj.name : null,
+    serviceId: serviceObj ? serviceObj._id : null,
+    date: dateStr,
+    time: timeStr,
+    isChangeRequest: intent === 'CHANGE_APPOINTMENT_DETAILS' || lower.includes('actually') || lower.includes('change'),
+  };
+}
+
+// ----------------------------------------------------------------------
+// MAIN CONVERSATIONAL AI CHAT PROCESSOR
+// ----------------------------------------------------------------------
+
 export async function processAIChat({ message, conversationId, user = null }) {
   const convId = conversationId || `conv-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-  
-  // Find or create conversation state in MongoDB
+
+  // Retrieve or create persistent conversation in MongoDB
   let chatRecord = await AIChat.findOne({ conversationId: convId });
   if (!chatRecord) {
     try {
@@ -248,19 +462,17 @@ export async function processAIChat({ message, conversationId, user = null }) {
         clientEmail: user?.email || '',
         messages: [],
         bookingDraft: {
+          intent: null,
           service: null,
           serviceId: null,
           date: null,
           time: null,
           name: user?.name || null,
           email: user?.email || null,
-          awaitingName: false,
           awaitingConfirmation: false,
           pendingAction: null,
           targetAppointmentId: null,
           targetDetails: null,
-          rescheduleDate: null,
-          rescheduleTime: null,
         },
       });
     } catch (err) {
@@ -272,7 +484,7 @@ export async function processAIChat({ message, conversationId, user = null }) {
     }
   }
 
-  // Record client message
+  // Push user message into conversation history
   chatRecord.messages.push({
     sender: 'client',
     text: message,
@@ -280,10 +492,9 @@ export async function processAIChat({ message, conversationId, user = null }) {
   });
   chatRecord.previewMessage = message;
 
-  const lower = message.toLowerCase().trim();
   let draft = chatRecord.bookingDraft || {};
 
-  // Check for admin takeover
+  // Check admin takeover
   if (chatRecord.takenOver) {
     const aiResponse = "An agent has taken over this chat and will respond shortly.";
     chatRecord.messages.push({ sender: 'ai', text: aiResponse });
@@ -291,56 +502,26 @@ export async function processAIChat({ message, conversationId, user = null }) {
     return { success: true, message: aiResponse, conversationId: convId, draft, done: false };
   }
 
-  // Check escalation keywords
-  if (lower.includes('urgent') || lower.includes('down') || lower.includes('broken') || lower.includes('server is down')) {
-    chatRecord.actionRequired = 'Escalation Suggested';
-  }
-
   // Load active services from MongoDB
   const activeServices = await Service.find({ status: true });
   const serviceNames = activeServices.map((s) => s.name);
 
-  const isAffirmative = ['yes', 'confirm', 'sure', 'sounds good', 'yes please', 'ok', 'okay', 'book it', 'proceed', 'cancel it', 'yes cancel'].some((w) => lower === w || lower.startsWith(w));
+  // Intent & Entity Extraction
+  const extractedInfo = await detectIntentAndEntities(message, activeServices, draft);
+  const { intent, service, serviceId, date, time, isChangeRequest } = extractedInfo;
 
-  const isNegative = [
-    'no',
-    'no thanks',
-    'no thank you',
-    'not now',
-    'nope',
-    'nah',
-    'nevermind',
-    'never mind',
-    "i can't",
-    'i cannot',
-    'cannot book',
-    "can't book",
-    'not today',
-    'maybe later',
-    'dont want',
-    "don't want",
-    'no i am busy',
-    "no i'm busy",
-    'not interested',
-    'not available',
-    'no i cannot',
-    'no i cant',
-    'no i can not',
-    'decline',
-    'not able to book',
-    'not able',
-  ].some((w) => lower === w || lower.startsWith(w + ' ') || lower.endsWith(' ' + w) || lower.includes(' ' + w + ' ') || lower.includes('no thanks') || lower.includes('no thank you') || lower.includes('not now') || lower.includes('maybe later') || lower.includes("can't book") || lower.includes('cannot book') || lower.includes('not able to book') || lower.includes('not able'));
+  draft.intent = intent;
 
   // 1. PENDING ACTION: Cancellation Confirmation
   if (draft.pendingAction === 'CANCEL_CONFIRMATION') {
-    if (isAffirmative || lower.includes('cancel')) {
+    if (intent === 'CONFIRM_APPOINTMENT') {
       const apptId = draft.targetAppointmentId;
       if (apptId) {
         await cancelAppointment(apptId, 'Cancelled by client via AI chat');
       }
       const details = draft.targetDetails || {};
-      const reply = `Your booking slot for ${details.service || 'appointment'} on ${details.date || ''} at ${details.time || ''} has been successfully cancelled. This slot is now available for other clients for booking.`;
-      
+      const reply = `Your booking slot for ${details.service || 'appointment'} on ${details.date || ''} at ${details.time || ''} has been successfully cancelled.`;
+
       draft.pendingAction = null;
       draft.targetAppointmentId = null;
       draft.targetDetails = null;
@@ -365,78 +546,8 @@ export async function processAIChat({ message, conversationId, user = null }) {
     }
   }
 
-  // 2. PENDING ACTION: Reschedule / Update Date or Time
-  if (draft.pendingAction === 'RESCHEDULE_INPUT') {
-    const apptId = draft.targetAppointmentId;
-    const appt = await Appointment.findById(apptId);
-    if (!appt || appt.status === 'CANCELLED') {
-      const reply = "I could not find an active appointment to reschedule. Would you like to book a new appointment?";
-      draft.pendingAction = null;
-      chatRecord.messages.push({ sender: 'ai', text: reply });
-      chatRecord.bookingDraft = draft;
-      chatRecord.markModified('bookingDraft');
-      await chatRecord.save();
-      return { success: true, message: reply, conversationId: convId };
-    }
-
-    const newExtractedDate = resolveDateString(message);
-    const newExtractedTime = resolveTimeString(message);
-
-    const targetDate = newExtractedDate || draft.rescheduleDate || appt.date;
-    const targetTime = newExtractedTime || draft.rescheduleTime;
-
-    if (!targetTime) {
-      draft.rescheduleDate = targetDate;
-      const avail = await getAvailableSlots(targetDate);
-      let reply = `You want to update Date or Time for ${appt.serviceName}? `;
-      if (avail.available && avail.slots.length > 0) {
-        const topSlots = avail.slots.slice(0, 4).map((s) => s.startTime).join(', ');
-        reply += `Available slots on ${targetDate} include: ${topSlots}. Which time works for you?`;
-      } else {
-        reply += `Please provide the new date and time you prefer (e.g. "Tomorrow at 4pm" or "Friday at 2pm").`;
-      }
-      chatRecord.messages.push({ sender: 'ai', text: reply });
-      chatRecord.bookingDraft = draft;
-      chatRecord.markModified('bookingDraft');
-      await chatRecord.save();
-      return { success: true, message: reply, conversationId: convId, draft };
-    }
-
-    // Validate proposed slot
-    const slotValidation = await validateSlotAvailability(targetDate, targetTime, appt.duration, appt._id);
-    if (!slotValidation.valid) {
-      const avail = await getAvailableSlots(targetDate);
-      let reply = `${slotValidation.message}`;
-      if (avail.available && avail.slots.length > 0) {
-        const topSlots = avail.slots.slice(0, 3).map((s) => s.startTime).join(', ');
-        reply += ` Available openings on ${targetDate}: ${topSlots}. Which time works for you?`;
-      }
-      draft.rescheduleTime = null;
-      chatRecord.messages.push({ sender: 'ai', text: reply });
-      chatRecord.bookingDraft = draft;
-      chatRecord.markModified('bookingDraft');
-      await chatRecord.save();
-      return { success: true, message: reply, conversationId: convId, draft };
-    }
-
-    // Execute Reschedule in MongoDB
-    const updated = await rescheduleAppointment(appt._id, targetDate, targetTime);
-    const reply = `Your appointment for ${updated.serviceName} has been successfully updated to ${updated.date} at ${updated.startTime}. A confirmation notification has been sent.`;
-    
-    draft.pendingAction = null;
-    draft.targetAppointmentId = null;
-    draft.rescheduleDate = null;
-    draft.rescheduleTime = null;
-
-    chatRecord.messages.push({ sender: 'ai', text: reply });
-    chatRecord.bookingDraft = draft;
-    chatRecord.markModified('bookingDraft');
-    await chatRecord.save();
-    return { success: true, message: reply, conversationId: convId, rescheduled: true, appointment: updated };
-  }
-
-  // 3. INTENT: Cancel appointment request with Confirmation prompt
-  if (lower.includes('cancel')) {
+  // 2. INTENT: CANCEL_APPOINTMENT
+  if (intent === 'CANCEL_APPOINTMENT') {
     const userEmail = user?.email || draft.email || chatRecord.clientEmail;
     const userName = user?.name || draft.name || chatRecord.clientName;
     const orClauses = [];
@@ -456,7 +567,12 @@ export async function processAIChat({ message, conversationId, user = null }) {
       return { success: true, message: reply, conversationId: convId };
     }
 
-    const targetAppt = appts[0];
+    let targetAppt = appts[0];
+    if (date || time) {
+      const matched = appts.find(a => (!date || a.date === date) && (!time || a.startTime === time));
+      if (matched) targetAppt = matched;
+    }
+
     draft.pendingAction = 'CANCEL_CONFIRMATION';
     draft.targetAppointmentId = targetAppt._id;
     draft.targetDetails = {
@@ -473,15 +589,8 @@ export async function processAIChat({ message, conversationId, user = null }) {
     return { success: true, message: reply, conversationId: convId, draft, awaitingConfirmation: true };
   }
 
-  // 4. INTENT: Reschedule / Update Date or Time
-  if (
-    lower.includes('reschedule') ||
-    lower.includes('update') ||
-    lower.includes('change time') ||
-    lower.includes('change date') ||
-    lower.includes('move') ||
-    lower.includes('postpone')
-  ) {
+  // 3. INTENT: RESCHEDULE_APPOINTMENT (For already confirmed MongoDB appointments)
+  if (intent === 'RESCHEDULE_APPOINTMENT' || draft.pendingAction === 'RESCHEDULE_INPUT') {
     const userEmail = user?.email || draft.email || chatRecord.clientEmail;
     const userName = user?.name || draft.name || chatRecord.clientName;
     const orClauses = [];
@@ -489,45 +598,46 @@ export async function processAIChat({ message, conversationId, user = null }) {
     if (userEmail) orClauses.push({ clientEmail: new RegExp(`^${userEmail.trim()}$`, 'i') });
     if (userName && userName !== 'Guest Client') orClauses.push({ clientName: new RegExp(`^${userName.trim()}$`, 'i') });
 
-    const appts = await Appointment.find({
-      $or: orClauses.length > 0 ? orClauses : [{ _id: null }],
-      status: { $in: ['CONFIRMED', 'confirmed', 'PENDING', 'pending'] },
-    }).sort({ date: 1, startTime: 1 });
+    let appt = null;
+    if (draft.targetAppointmentId) {
+      appt = await Appointment.findById(draft.targetAppointmentId);
+    }
+    if (!appt) {
+      const appts = await Appointment.find({
+        $or: orClauses.length > 0 ? orClauses : [{ _id: null }],
+        status: { $in: ['CONFIRMED', 'confirmed', 'PENDING', 'pending'] },
+      }).sort({ date: 1, startTime: 1 });
+      if (appts && appts.length > 0) appt = appts[0];
+    }
 
-    if (!appts || appts.length === 0) {
-      const reply = "I couldn't find any active booked appointments under your profile to update or reschedule. Would you like to schedule a new appointment?";
+    if (!appt) {
+      const reply = "I couldn't find any active booked appointments under your profile to reschedule. Would you like to schedule a new appointment?";
+      draft.pendingAction = null;
       chatRecord.messages.push({ sender: 'ai', text: reply });
+      chatRecord.bookingDraft = draft;
       await chatRecord.save();
       return { success: true, message: reply, conversationId: convId };
     }
 
-    const targetAppt = appts[0];
-    const newExtractedDate = resolveDateString(message);
-    const newExtractedTime = resolveTimeString(message);
+    const targetDate = date || draft.rescheduleDate || appt.date;
+    const targetTime = time || draft.rescheduleTime || appt.startTime;
 
-    if (newExtractedDate && newExtractedTime) {
-      // Direct slot validation & reschedule
-      const slotValidation = await validateSlotAvailability(newExtractedDate, newExtractedTime, targetAppt.duration, targetAppt._id);
-      if (!slotValidation.valid) {
-        const avail = await getAvailableSlots(newExtractedDate);
-        let reply = `${slotValidation.message}`;
+    if (date || time) {
+      const durationToUse = appt.duration || 30;
+      const validation = await validateSlotAvailability(targetDate, targetTime, durationToUse, appt._id);
+      if (!validation.valid) {
+        const avail = await getAvailableSlots(targetDate);
+        let reply = `${validation.message}`;
         if (avail.available && avail.slots.length > 0) {
-          const topSlots = avail.slots.slice(0, 3).map((s) => s.startTime).join(', ');
-          reply += ` Available openings on ${newExtractedDate}: ${topSlots}. Which time works for you?`;
+          reply += ` Available slots on ${targetDate}: ${avail.slots.map(s => s.startTime).join(', ')}.`;
         }
-        draft.pendingAction = 'RESCHEDULE_INPUT';
-        draft.targetAppointmentId = targetAppt._id;
-        draft.rescheduleDate = newExtractedDate;
         chatRecord.messages.push({ sender: 'ai', text: reply });
-        chatRecord.bookingDraft = draft;
-        chatRecord.markModified('bookingDraft');
         await chatRecord.save();
-        return { success: true, message: reply, conversationId: convId, draft };
+        return { success: true, message: reply, conversationId: convId };
       }
 
-      const updated = await rescheduleAppointment(targetAppt._id, newExtractedDate, newExtractedTime);
-      const reply = `Your appointment for ${updated.serviceName} has been successfully updated to ${updated.date} at ${updated.startTime}. A confirmation notification has been sent.`;
-      
+      const updated = await rescheduleAppointment(appt._id, targetDate, targetTime, 'client');
+      const reply = `Your appointment has been successfully updated to ${updated.serviceName} on ${updated.date} at ${updated.startTime}.`;
       draft.pendingAction = null;
       draft.targetAppointmentId = null;
       chatRecord.messages.push({ sender: 'ai', text: reply });
@@ -535,24 +645,20 @@ export async function processAIChat({ message, conversationId, user = null }) {
       chatRecord.markModified('bookingDraft');
       await chatRecord.save();
       return { success: true, message: reply, conversationId: convId, rescheduled: true, appointment: updated };
+    } else {
+      draft.pendingAction = 'RESCHEDULE_INPUT';
+      draft.targetAppointmentId = appt._id;
+      const reply = `Which Service, Date, or Time would you like to update? You want to update Date or Time for your appointment (currently ${appt.serviceName} on ${appt.date} at ${appt.startTime})?`;
+      chatRecord.messages.push({ sender: 'ai', text: reply });
+      chatRecord.bookingDraft = draft;
+      chatRecord.markModified('bookingDraft');
+      await chatRecord.save();
+      return { success: true, message: reply, conversationId: convId };
     }
-
-    // Ask user if they want to update Date or Time
-    draft.pendingAction = 'RESCHEDULE_INPUT';
-    draft.targetAppointmentId = targetAppt._id;
-    draft.rescheduleDate = newExtractedDate || targetAppt.date;
-    draft.rescheduleTime = newExtractedTime || null;
-
-    const reply = `You want to update Date or Time for ${targetAppt.serviceName} (currently on ${targetAppt.date} at ${targetAppt.startTime})? Please provide the new date and time you prefer.`;
-    chatRecord.messages.push({ sender: 'ai', text: reply });
-    chatRecord.bookingDraft = draft;
-    chatRecord.markModified('bookingDraft');
-    await chatRecord.save();
-    return { success: true, message: reply, conversationId: convId, awaitingRescheduleInput: true };
   }
 
-  // 5. INTENT: Check existing appointments ("show my appointments", "my appointments")
-  if (lower.includes('my appointments') || lower.includes('upcoming appointments') || lower.includes('view my appointments')) {
+  // 4. INTENT: VIEW_APPOINTMENTS
+  if (intent === 'VIEW_APPOINTMENTS') {
     const userEmail = user?.email || draft.email || chatRecord.clientEmail;
     const userName = user?.name || draft.name || chatRecord.clientName;
     const orClauses = [];
@@ -579,22 +685,78 @@ export async function processAIChat({ message, conversationId, user = null }) {
     return { success: true, message: reply, conversationId: convId };
   }
 
-  // 6. INTENT: List Services
-  if (lower.includes('what services') || lower.includes('services do you offer') || lower.includes('list services')) {
-    const serviceList = activeServices.map((s) => `• ${s.name} (${s.durationMinutes} min${s.price > 0 ? `, $${s.price}` : ', Free'})`).join('\n');
+  // 5. INTENT: LIST_SERVICES
+  if (intent === 'LIST_SERVICES') {
+    const serviceList = activeServices.map((s) => `• ${s.name} (${s.durationMinutes} mins${s.price > 0 ? `, $${s.price}` : ', Free'})`).join('\n');
     const reply = `We offer the following services:\n${serviceList}\nWhich one would you like to book?`;
     chatRecord.messages.push({ sender: 'ai', text: reply });
     await chatRecord.save();
     return { success: true, message: reply, conversationId: convId };
   }
 
-  // 7. Booking confirmation response ("yes", "confirm", "confirm booking", "sounds good", "sure")
-  if (draft.awaitingConfirmation && isAffirmative && draft.service && draft.date && draft.time && draft.name && draft.email) {
+  // 5.5. INTENT: THANK_YOU / Courtesy Response
+  const lowerMsg = message.toLowerCase().trim();
+  if (
+    lowerMsg.includes('thank') ||
+    lowerMsg.includes('thx') ||
+    lowerMsg.includes('appreciate') ||
+    lowerMsg.includes('grateful')
+  ) {
+    const clientFirstName = user?.name?.split(' ')[0] || draft.name?.split(' ')[0] || '';
+    const greetingName = clientFirstName ? ` ${clientFirstName}` : '';
+    const reply = `You're very welcome${greetingName}! Thank you for choosing Nexora Technologies. We look forward to assisting you. Wishing you a great day ahead!`;
+
+    chatRecord.messages.push({ sender: 'ai', text: reply });
+    await chatRecord.save();
+    return { success: true, message: reply, conversationId: convId, draft };
+  }
+
+  // 6. INTENT: GREETING
+  if (intent === 'GREETING' && !draft.service && !draft.date) {
+    const clientName = user?.name?.split(' ')[0] || draft.name?.split(' ')[0] || '';
+    const greetingName = clientName ? ` ${clientName}` : '';
+    const reply = `Hello${greetingName}! 👋 Welcome to Nexora Technologies (Codeinyourself AI Appointments). How can I help you today?\n\nWe offer: ${serviceNames.join(', ')}. What service or appointment date are you interested in?`;
+    chatRecord.messages.push({ sender: 'ai', text: reply });
+    await chatRecord.save();
+    return { success: true, message: reply, conversationId: convId, draft };
+  }
+
+  // 7. INTENT: REJECT_APPOINTMENT
+  if (intent === 'REJECT_APPOINTMENT') {
+    const clientFirstName = user?.name?.split(' ')[0] || draft.name?.split(' ')[0] || '';
+    const namePrefix = clientFirstName ? `, ${clientFirstName}` : '';
+    const reply = `No problem at all${namePrefix}! Thank you for considering Codeinyourself IT Company. Let us know whenever you need assistance. Have a great day!`;
+
+    chatRecord.bookingDraft = {
+      intent: null,
+      service: null,
+      serviceId: null,
+      date: null,
+      time: null,
+      name: user?.name || null,
+      email: user?.email || null,
+      awaitingConfirmation: false,
+      pendingAction: null,
+      targetAppointmentId: null,
+      targetDetails: null,
+    };
+
+    chatRecord.messages.push({ sender: 'ai', text: reply });
+    chatRecord.markModified('bookingDraft');
+    await chatRecord.save();
+    return { success: true, message: reply, conversationId: convId, declined: true, draft: chatRecord.bookingDraft };
+  }
+
+  // 8. INTENT: CONFIRM_APPOINTMENT
+  if (intent === 'CONFIRM_APPOINTMENT' && draft.service && draft.date && draft.time) {
+    const finalName = draft.name || user?.name || 'Guest Client';
+    const finalEmail = draft.email || user?.email || 'client@example.com';
+
     try {
       const appt = await createAppointment({
         userId: user?._id || chatRecord.userId,
-        clientName: draft.name,
-        clientEmail: draft.email,
+        clientName: finalName,
+        clientEmail: finalEmail,
         serviceId: draft.serviceId,
         serviceName: draft.service,
         date: draft.date,
@@ -602,9 +764,10 @@ export async function processAIChat({ message, conversationId, user = null }) {
         source: 'ai-chat',
       });
 
-      const reply = `Your appointment has been confirmed for ${appt.serviceName} on ${appt.date} at ${appt.startTime} with Neha Shah. A confirmation has been sent to ${draft.email}.`;
-      
+      const reply = `Your appointment has been confirmed for ${appt.serviceName} on ${appt.date} at ${appt.startTime} with Neha Shah. A confirmation has been sent to ${finalEmail}.`;
+
       chatRecord.bookingDraft = {
+        intent: null,
         service: null,
         serviceId: null,
         date: null,
@@ -616,7 +779,7 @@ export async function processAIChat({ message, conversationId, user = null }) {
         targetAppointmentId: null,
         targetDetails: null,
       };
-      
+
       chatRecord.messages.push({ sender: 'ai', text: reply });
       chatRecord.markModified('bookingDraft');
       await chatRecord.save();
@@ -637,7 +800,7 @@ export async function processAIChat({ message, conversationId, user = null }) {
         },
       };
     } catch (err) {
-      const reply = `Sorry, could not confirm the booking: ${err.message}. Would you like to select another time?`;
+      const reply = `Sorry, could not confirm the booking: ${err.message}. Would you like to select another slot?`;
       draft.awaitingConfirmation = false;
       chatRecord.messages.push({ sender: 'ai', text: reply });
       chatRecord.bookingDraft = draft;
@@ -647,215 +810,60 @@ export async function processAIChat({ message, conversationId, user = null }) {
     }
   }
 
-  // 7.1. INTENT: Client Says No / Declines Booking After Slot Is Available Or During Confirmation
-  if (
-    isNegative &&
-    !isAffirmative &&
-    (draft.awaitingConfirmation || (draft.service && (draft.date || draft.time)))
-  ) {
-    const clientFirstName = user?.name?.split(' ')[0] || draft.name?.split(' ')[0] || '';
-    const namePrefix = clientFirstName ? `, ${clientFirstName}` : '';
-    const reply = `No problem at all${namePrefix}! Thank you for considering Nexora Technologies. If you need any assistance or would like to schedule an appointment in the future, feel free to reach out anytime. Wishing you a great day ahead!`;
-
-    chatRecord.bookingDraft = {
-      service: null,
-      serviceId: null,
-      date: null,
-      time: null,
-      name: user?.name || null,
-      email: user?.email || null,
-      awaitingConfirmation: false,
-      pendingAction: null,
-      targetAppointmentId: null,
-      targetDetails: null,
-    };
-
-    chatRecord.messages.push({ sender: 'ai', text: reply });
-    chatRecord.markModified('bookingDraft');
-    await chatRecord.save();
-    return { success: true, message: reply, conversationId: convId, declined: true, draft: chatRecord.bookingDraft };
+  // 9. DYNAMIC DRAFT STATE MERGING
+  if (service) {
+    draft.service = service;
+    draft.serviceId = serviceId;
+  }
+  if (date) {
+    draft.date = date;
+  }
+  if (time) {
+    draft.time = time;
   }
 
-  // 7.2. INTENT: Client Says "No" / "No Thanks" In General
-  if (
-    isNegative &&
-    !draft.service &&
-    !draft.date &&
-    !draft.pendingAction
-  ) {
-    const clientFirstName = user?.name?.split(' ')[0] || '';
-    const namePrefix = clientFirstName ? `, ${clientFirstName}` : '';
-    const reply = `You're very welcome${namePrefix}! Thank you for contacting Nexora Technologies. Let us know whenever you need any IT assistance. Have a wonderful day ahead!`;
-    chatRecord.messages.push({ sender: 'ai', text: reply });
-    await chatRecord.save();
-    return { success: true, message: reply, conversationId: convId, draft };
-  }
+  // Auto populate user credentials if available
+  if (!draft.name && user?.name) draft.name = user.name;
+  if (!draft.email && user?.email) draft.email = user.email;
 
-  // 8. INTENT: Thank You & Polite Greeting Response
-  if (
-    lower.includes('thank') ||
-    lower.includes('thx') ||
-    lower.includes('appreciate') ||
-    lower.includes('grateful')
-  ) {
-    const clientName = user?.name?.split(' ')[0] || draft.name?.split(' ')[0] || '';
-    const greetingName = clientName ? `, ${clientName}` : '';
-    const reply = `You're very welcome${greetingName}! Thank you for choosing Nexora Technologies. We look forward to assisting you. Wishing you a great day ahead! If you need anything else, feel free to reach out anytime.`;
-    chatRecord.messages.push({ sender: 'ai', text: reply });
-    await chatRecord.save();
-    return { success: true, message: reply, conversationId: convId, draft };
-  }
-
-  // 9. INTENT: General Greeting ("hi", "hello", "hey", "good morning", "good evening")
-  if (
-    (lower === 'hi' ||
-      lower === 'hello' ||
-      lower === 'hey' ||
-      lower.startsWith('hi ') ||
-      lower.startsWith('hello ') ||
-      lower.startsWith('hey ') ||
-      lower.includes('good morning') ||
-      lower.includes('good afternoon') ||
-      lower.includes('good evening')) &&
-    !draft.service &&
-    !draft.date
-  ) {
-    const clientName = user?.name?.split(' ')[0] || draft.name?.split(' ')[0] || '';
-    const greetingName = clientName ? ` ${clientName}` : '';
-    const reply = `Hello${greetingName}! Welcome to Nexora Technologies. How can I assist you today? You can schedule a consultation, manage your appointments, or ask about our available services.`;
-    chatRecord.messages.push({ sender: 'ai', text: reply });
-    await chatRecord.save();
-    return { success: true, message: reply, conversationId: convId, draft };
-  }
-
-  // Extract service from user message
-  for (const s of activeServices) {
-    if (lower.includes(s.name.toLowerCase())) {
-      draft.service = s.name;
-      draft.serviceId = s._id;
-      break;
-    }
-  }
-  if (!draft.service) {
-    if (lower.includes('web') || lower.includes('consultation') || lower.includes('website')) {
-      const matched = activeServices.find((s) => s.name.toLowerCase().includes('web'));
-      if (matched) { draft.service = matched.name; draft.serviceId = matched._id; }
-    } else if (lower.includes('it support') || lower.includes('support') || lower.includes('server')) {
-      const matched = activeServices.find((s) => s.name.toLowerCase().includes('support'));
-      if (matched) { draft.service = matched.name; draft.serviceId = matched._id; }
-    } else if (lower.includes('strategy') || lower.includes('product')) {
-      const matched = activeServices.find((s) => s.name.toLowerCase().includes('strategy'));
-      if (matched) { draft.service = matched.name; draft.serviceId = matched._id; }
-    } else if (lower.includes('security') || lower.includes('audit')) {
-      const matched = activeServices.find((s) => s.name.toLowerCase().includes('security'));
-      if (matched) { draft.service = matched.name; draft.serviceId = matched._id; }
-    }
-  }
-
-  // Extract date
-  const extractedDate = resolveDateString(message);
-  if (extractedDate) draft.date = extractedDate;
-
-  // Extract time
-  const extractedTime = resolveTimeString(message);
-  if (extractedTime) draft.time = extractedTime;
-
-  // Extract email
+  // Extract explicit name/email from message if mentioned
   const extractedEmail = extractEmail(message);
   if (extractedEmail) draft.email = extractedEmail;
-
-  // Extract name
   const extractedName = extractNameFromMessage(message);
   if (extractedName) draft.name = extractedName;
 
-  // Check if name provided
-  if (!draft.name && user?.name) {
-    draft.name = user.name;
-  }
-  if (!draft.email && user?.email) {
-    draft.email = user.email;
-  }
+  // Check required fields for booking: service, date, time
+  const missingFields = [];
+  if (!draft.service) missingFields.push('service');
+  if (!draft.date) missingFields.push('date');
+  if (!draft.time) missingFields.push('time');
 
-  // Step 1: Analyze problem / requirement with Gemini if service not explicitly set or if message is a technical inquiry
-  const isProblemInquiry = !draft.service || lower.includes('crash') || lower.includes('leak') || lower.includes('cpu') || lower.includes('vulnerability') || lower.includes('hack') || lower.includes('fix') || lower.includes('build') || lower.includes('help') || lower.includes('issue') || lower.includes('problem');
-
-  if (isProblemInquiry) {
-    let geminiAnalysis = null;
-    if (getGeminiClient()) {
-      geminiAnalysis = await analyzeClientProblemWithGemini(message, activeServices);
-    }
-
-    if (geminiAnalysis && geminiAnalysis.isProblemOrRequirement && geminiAnalysis.matchedServiceName) {
-      const matched = activeServices.find(
-        (s) => s.name.toLowerCase() === geminiAnalysis.matchedServiceName.toLowerCase()
-      ) || activeServices[0];
-
-      draft.service = matched.name;
-      draft.serviceId = matched._id;
-      if (geminiAnalysis.technicalAdvice) {
-        draft.technicalAdvice = geminiAnalysis.technicalAdvice;
-      }
-
-      // If user also provided date and time, proceed immediately to validation
-      if (draft.date && draft.time) {
-        // Continue to Step 3 below
-      } else {
-        // Recommend the service with technical problem-solving advice and suggest next open slots
-        let reply = geminiAnalysis.responseMessage;
-        if (!reply) {
-          reply = `${geminiAnalysis.technicalAdvice} We recommend booking our ${matched.name}. What date and time works best for you?`;
-        }
-
-        // Recommend upcoming slots on tomorrow or next day from MongoDB
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowISO = tomorrow.toISOString().split('T')[0];
-        const avail = await getAvailableSlots(tomorrowISO);
-        if (avail.available && avail.slots.length > 0) {
-          const topSlots = avail.slots.slice(0, 3).map((s) => s.startTime).join(', ');
-          reply += ` Open slots tomorrow (${tomorrowISO}): ${topSlots}.`;
-        }
-
-        chatRecord.messages.push({ sender: 'ai', text: reply });
-        chatRecord.bookingDraft = draft;
-        chatRecord.markModified('bookingDraft');
-        await chatRecord.save();
-        return { success: true, message: reply, conversationId: convId, draft };
-      }
-    } else if (!draft.service) {
-      let customGeminiReply = null;
-      if (getGeminiClient()) {
-        customGeminiReply = await callGemini(
-          `A client sent the message: "${message}". We offer: ${serviceNames.join(', ')}. Provide a concise, friendly response under 35 words asking which service they would like to book or describe their requirement.`,
-          'You are the official AI booking assistant for Nexora Technologies. Be concise, expert, and professional.'
-        );
-      }
-      const reply = customGeminiReply || `Sure! What service or technical assistance would you like to book? We offer ${serviceNames.join(', ')}.`;
-      chatRecord.messages.push({ sender: 'ai', text: reply });
-      chatRecord.bookingDraft = draft;
-      chatRecord.markModified('bookingDraft');
-      await chatRecord.save();
-      return { success: true, message: reply, conversationId: convId, draft };
-    }
-  }
-
-  // Step 2: Missing Date or Time
-  if (!draft.date || !draft.time) {
-    let reply = `Got it — ${draft.service}. `;
-    if (!draft.date && !draft.time) {
-      reply += `What date and time works best for you? (e.g. "Tomorrow at 3pm" or "Friday at 11am")`;
-    } else if (!draft.date) {
-      reply += `What date would you prefer?`;
-    } else {
-      // Check availability on this date to recommend open slots
+  // If fields are missing, ask ONLY for missing information
+  if (missingFields.length > 0) {
+    let reply = '';
+    if (missingFields.includes('service') && missingFields.includes('date') && missingFields.includes('time')) {
+      reply = `Which service and preferred date or time would you like to book? We offer: ${serviceNames.join(', ')}.`;
+    } else if (missingFields.includes('service') && missingFields.includes('time')) {
+      reply = `Which service and time would you prefer for ${draft.date}? We offer: ${serviceNames.join(', ')}.`;
+    } else if (missingFields.includes('service') && missingFields.includes('date')) {
+      reply = `Which service and date would you prefer for an appointment at ${draft.time}? We offer: ${serviceNames.join(', ')}.`;
+    } else if (missingFields.includes('date') && missingFields.includes('time')) {
+      reply = `What date and time would you prefer for your ${draft.service} appointment? (e.g. "Tomorrow at 3 PM")`;
+    } else if (missingFields.includes('service')) {
+      reply = `Which service would you like to book for ${draft.date}${draft.time ? ' at ' + draft.time : ''}? We offer: ${serviceNames.join(', ')}.`;
+    } else if (missingFields.includes('date')) {
+      reply = `What date would you prefer for your ${draft.service} appointment at ${draft.time}?`;
+    } else if (missingFields.includes('time')) {
       const avail = await getAvailableSlots(draft.date);
-      if (avail.available && avail.slots.length > 0) {
-        const topSlots = avail.slots.slice(0, 4).map((s) => s.startTime).join(', ');
-        reply += `Available slots on ${draft.date} include ${topSlots}. Which time do you prefer?`;
+      if (avail.available && avail.slots && avail.slots.length > 0) {
+        const topSlots = avail.slots.map(s => s.startTime).join(', ');
+        reply = `Available slots for ${draft.service} on ${draft.date} include: ${topSlots}. Which time works best for you?`;
       } else {
-        reply += `We don't have available slots on ${draft.date}. Could you choose another date?`;
+        reply = `Currently, all upcoming slots on ${draft.date} are fully booked or closed in our system. Please select another date.`;
+        draft.date = null;
       }
     }
+
     chatRecord.messages.push({ sender: 'ai', text: reply });
     chatRecord.bookingDraft = draft;
     chatRecord.markModified('bookingDraft');
@@ -863,19 +871,23 @@ export async function processAIChat({ message, conversationId, user = null }) {
     return { success: true, message: reply, conversationId: convId, draft };
   }
 
-  // Step 3: Validate slot with MongoDB
-  const slotValidation = await validateSlotAvailability(draft.date, draft.time, 30);
+  // 10. ALL REQUIRED FIELDS (service, date, time) ARE PRESENT
+  const serviceObj = activeServices.find(s => s.name.toLowerCase() === draft.service.toLowerCase()) || activeServices[0];
+  const duration = serviceObj ? serviceObj.durationMinutes : 30;
+
+  const slotValidation = await validateSlotAvailability(draft.date, draft.time, duration);
   if (!slotValidation.valid) {
     const avail = await getAvailableSlots(draft.date);
     let reply = `${slotValidation.message}`;
-    if (avail.available && avail.slots.length > 0) {
-      const topSlots = avail.slots.slice(0, 3).map((s) => s.startTime).join(', ');
+    if (avail.available && avail.slots && avail.slots.length > 0) {
+      const topSlots = avail.slots.map(s => s.startTime).join(', ');
       reply += ` Available openings on ${draft.date}: ${topSlots}. Which time works for you?`;
     }
     draft.time = null;
     if (slotValidation.reason === 'WEEKEND_CLOSED' || slotValidation.reason === 'HOLIDAY' || slotValidation.reason === 'PAST_DATE') {
       draft.date = null;
     }
+
     chatRecord.messages.push({ sender: 'ai', text: reply });
     chatRecord.bookingDraft = draft;
     chatRecord.markModified('bookingDraft');
@@ -883,33 +895,15 @@ export async function processAIChat({ message, conversationId, user = null }) {
     return { success: true, message: reply, conversationId: convId, draft };
   }
 
-  // Step 4: Missing Name
   if (!draft.name) {
-    const isNotDateOrTime = !extractedDate && !extractedTime && !extractedEmail;
-    const isShortMessage = message.trim().length > 0 && message.trim().length <= 50;
-    const isNotServiceKeywords = !lower.includes('service') && !lower.includes('appointment') && !lower.includes('book') && !lower.includes('cancel');
-
-    if (isNotDateOrTime && isShortMessage && isNotServiceKeywords && (draft.awaitingName || (draft.service && draft.date && draft.time))) {
-      let cleanName = message.replace(/^(my name is|i'm|i am|this is|it's|name is)\s+/i, '').trim();
-      cleanName = cleanName.replace(/[.!,]$/g, '').trim();
-      if (cleanName.length > 1) {
-        draft.name = cleanName;
-        draft.awaitingName = false;
-      }
-    }
-
-    if (!draft.name) {
-      const reply = `Great! ${draft.time} on ${draft.date} is available. What is your full name?`;
-      draft.awaitingName = true;
-      chatRecord.messages.push({ sender: 'ai', text: reply });
-      chatRecord.bookingDraft = draft;
-      chatRecord.markModified('bookingDraft');
-      await chatRecord.save();
-      return { success: true, message: reply, conversationId: convId, draft, awaitingName: true };
-    }
+    const reply = `Great! ${draft.time} on ${draft.date} is available for ${draft.service}. What is your full name?`;
+    chatRecord.messages.push({ sender: 'ai', text: reply });
+    chatRecord.bookingDraft = draft;
+    chatRecord.markModified('bookingDraft');
+    await chatRecord.save();
+    return { success: true, message: reply, conversationId: convId, draft };
   }
 
-  // Step 5: Missing Email
   if (!draft.email) {
     const reply = `Thanks ${draft.name}. What is your email address for the appointment confirmation?`;
     chatRecord.messages.push({ sender: 'ai', text: reply });
@@ -919,9 +913,9 @@ export async function processAIChat({ message, conversationId, user = null }) {
     return { success: true, message: reply, conversationId: convId, draft };
   }
 
-  // Step 6: Explicit Confirmation Requirement
   draft.awaitingConfirmation = true;
-  const reply = `I have verified availability: ${draft.service} on ${draft.date} at ${draft.time} for ${draft.name} (${draft.email}). Would you like to confirm this booking?`;
+  const reply = `${draft.service} is available on ${draft.date} at ${draft.time}. Would you like me to confirm this booking?`;
+
   chatRecord.messages.push({ sender: 'ai', text: reply });
   chatRecord.bookingDraft = draft;
   chatRecord.markModified('bookingDraft');

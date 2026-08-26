@@ -3,14 +3,6 @@ import { processAIChat } from '../services/aiService.js';
 
 export async function handleAIChat(req, res) {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        requireLogin: true,
-        message: 'Please sign in or register to interact with our AI booking assistant.',
-      });
-    }
-
     const { message, conversationId } = req.body;
     if (!message) {
       return res.status(400).json({ success: false, message: 'message is required' });
@@ -19,7 +11,7 @@ export async function handleAIChat(req, res) {
     const result = await processAIChat({
       message,
       conversationId,
-      user: req.user,
+      user: req.user || null,
     });
 
     return res.json(result);

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Terminal, Menu, X, CalendarCheck } from 'lucide-react';
+import { Terminal, Menu, X, CalendarCheck, Sparkles } from 'lucide-react';
 
 const LINKS = [
   { id: 'home', label: 'Home' },
@@ -8,7 +8,7 @@ const LINKS = [
   { id: 'portal', label: 'Client Portal' },
 ];
 
-export function Navbar({ currentScreen, onNavigate, user, onLogout }) {
+export function Navbar({ currentScreen, onNavigate, user, onLogout, onOpenAiChat }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -36,10 +36,17 @@ export function Navbar({ currentScreen, onNavigate, user, onLogout }) {
               </button>
             );
           })}
-
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
+          <button
+            onClick={onOpenAiChat}
+            className="text-xs font-mono font-bold bg-signal/10 border border-signal/50 text-signal hover:bg-signal hover:text-ink-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-signal/20"
+          >
+            <Sparkles size={14} className="animate-pulse" />
+            <span>ASK AI</span>
+          </button>
+
           {user ? (
             <>
               <button
@@ -73,6 +80,13 @@ export function Navbar({ currentScreen, onNavigate, user, onLogout }) {
 
       {open && (
         <div className="md:hidden border-t border-ink-700 px-5 py-3 space-y-1 bg-ink-900">
+          <button
+            onClick={() => { onOpenAiChat(); setOpen(false); }}
+            className="w-full text-left px-3 py-2 text-sm text-signal font-mono font-bold bg-signal/10 border border-signal/30 rounded-md flex items-center gap-2 mb-2"
+          >
+            <Sparkles size={15} className="animate-pulse" />
+            <span>ASK AI ASSISTANT</span>
+          </button>
           {LINKS.map((l) => (
             <button
               key={l.id}

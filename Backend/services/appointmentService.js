@@ -161,12 +161,20 @@ export async function cancelAppointment(appointmentId, reason = '', cancelledBy 
   return await updateAppointmentStatus(appointmentId, 'CANCELLED', isCancelledByAdmin ? 'admin' : 'client', reason);
 }
 
-export async function rescheduleAppointment(appointmentId, newDate, newStartTime, rescheduledBy = 'client') {
+export async function rescheduleAppointment(appointmentId, newDate, newStartTime, rescheduledBy = 'client', newService = null) {
   const appt = await Appointment.findById(appointmentId);
   if (!appt) throw new Error('Appointment not found');
 
   const oldDate = appt.date;
   const oldTime = appt.startTime;
+  const oldService = appt.serviceName;
+
+  if (newService) {
+    if (newService._id) appt.serviceId = newService._id;
+    if (newService.name) appt.serviceName = newService.name;
+    if (newService.durationMinutes) appt.duration = newService.durationMinutes;
+    if (newService.price !== undefined) appt.price = newService.price;
+  }
 
   const validation = await validateSlotAvailability(newDate, newStartTime, appt.duration, appointmentId);
   if (!validation.valid) {
@@ -184,14 +192,14 @@ export async function rescheduleAppointment(appointmentId, newDate, newStartTime
     userId: appt.userId,
     recipientRole: 'client',
     type: 'BOOKING_RESCHEDULED',
-    message: `Your appointment for ${appt.serviceName} has been rescheduled to ${newDate} at ${newStartTime}.`,
+    message: `Your appointment has been updated to ${appt.serviceName} on ${newDate} at ${newStartTime}.`,
   });
 
   // 2. Admin notification
   await createNotification({
     recipientRole: 'admin',
     type: 'BOOKING_RESCHEDULED',
-    message: `Client ${appt.clientName} rescheduled their appointment for ${appt.serviceName} from ${oldDate} ${oldTime} to ${newDate} at ${newStartTime}.`,
+    message: `Client ${appt.clientName} updated their appointment (${oldService} on ${oldDate} ${oldTime}) to ${appt.serviceName} on ${newDate} at ${newStartTime}.`,
   });
 
   return appt;

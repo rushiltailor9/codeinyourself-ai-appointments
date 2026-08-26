@@ -8,15 +8,35 @@ import { LoginScreen } from './components/LoginScreen.jsx';
 import { ClientPortal } from './components/ClientPortal.jsx';
 import { Footer } from './components/Footer.jsx';
 import { Modals } from './components/Modals.jsx';
+import { AskAiWidget } from './components/AskAiWidget.jsx';
 import { getMyAppointments, cancelAppointment } from '../api/appointmentApi.js';
 import { logoutUser, getProfile } from '../api/authApi.js';
 
 export default function ClientApp() {
-  const [currentScreen, setCurrentScreen] = useState('home');
+  const [currentScreen, setCurrentScreen] = useState(() => {
+    const savedScreen = localStorage.getItem('nexora_current_screen');
+    if (savedScreen && ['home', 'services', 'portfolio', 'login', 'portal'].includes(savedScreen)) {
+      return savedScreen;
+    }
+    return 'home';
+  });
   const [user, setUser] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [prefillService, setPrefillService] = useState('');
   const [modalType, setModalType] = useState(null);
+  const [isAiChatOpen, setIsAiChatOpen] = useState(() => {
+    return localStorage.getItem('nexora_ai_chat_open') === 'true';
+  });
+
+  // Persist current active screen in localStorage on change
+  useEffect(() => {
+    localStorage.setItem('nexora_current_screen', currentScreen);
+  }, [currentScreen]);
+
+  // Save AI Chat open state to localStorage so it stays open on refresh
+  useEffect(() => {
+    localStorage.setItem('nexora_ai_chat_open', isAiChatOpen ? 'true' : 'false');
+  }, [isAiChatOpen]);
 
   // Restore authenticated user profile on initial load
   useEffect(() => {
@@ -77,16 +97,14 @@ export default function ClientApp() {
 
   const handleSelectServiceForBooking = (serviceName) => {
     setPrefillService(serviceName);
-    setCurrentScreen('home');
-    toast.info(`Selected ${serviceName} for booking consultation.`);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIsAiChatOpen(true);
+    toast.info(`Selected ${serviceName} for AI booking consultation.`);
   };
 
   const handleSelectProjectForBooking = (projectName) => {
     setPrefillService(`Project scope similar to ${projectName}`);
-    setCurrentScreen('home');
-    toast.info(`Configured project scope for consultation.`);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIsAiChatOpen(true);
+    toast.info(`Configured project scope for AI consultation.`);
   };
 
   const handleLoginSuccess = (loggedInUser) => {
@@ -124,6 +142,11 @@ export default function ClientApp() {
     logoutUser();
     setUser(null);
     setBookings([]);
+    setPrefillService('');
+    setIsAiChatOpen(false);
+    localStorage.removeItem('nexora_ai_messages');
+    localStorage.removeItem('nexora_ai_conv_id');
+    localStorage.removeItem('nexora_ai_chat_open');
     toast.info('You have been signed out.');
     setCurrentScreen('home');
   };
@@ -139,19 +162,17 @@ export default function ClientApp() {
           }}
           user={user}
           onLogout={handleLogout}
+          onOpenAiChat={() => setIsAiChatOpen(true)}
         />
       )}
 
       <div className="flex-grow flex flex-col">
         {currentScreen === 'home' && (
           <HomeScreen
-            prefillService={prefillService}
-            onBookingConfirmed={handleBookingConfirmed}
             onOpenPortal={() => setCurrentScreen(user ? 'portal' : 'login')}
             onExploreServices={() => { setCurrentScreen('services'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
             onExplorePortfolio={() => { setCurrentScreen('portfolio'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-            user={user}
-            onRequireLogin={() => { setCurrentScreen('login'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            onOpenAiChat={() => setIsAiChatOpen(true)}
           />
         )}
 
@@ -164,7 +185,7 @@ export default function ClientApp() {
 
         {currentScreen === 'portfolio' && (
           <PortfolioScreen
-            onDiscussProject={() => { setCurrentScreen('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            onDiscussProject={() => { setIsAiChatOpen(true); }}
             onSelectProjectForBooking={handleSelectProjectForBooking}
           />
         )}
@@ -177,7 +198,7 @@ export default function ClientApp() {
           <ClientPortal
             user={user}
             bookings={bookings}
-            onBookNewConsultation={() => { setCurrentScreen('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            onBookNewConsultation={() => { setIsAiChatOpen(true); }}
             onLogout={handleLogout}
             onCancelAppointment={handleCancelBooking}
           />
@@ -187,6 +208,22 @@ export default function ClientApp() {
       {currentScreen !== 'login' && <Footer onOpenModal={setModalType} dark={currentScreen === 'portal'} />}
 
       <Modals modalType={modalType} onClose={() => setModalType(null)} />
+
+      {/* Global Floating ASK AI Button & Popup Chatbot across all screens */}
+      <AskAiWidget
+        isOpen={isAiChatOpen}
+        onToggle={() => setIsAiChatOpen((prev) => !prev)}
+        onClose={() => setIsAiChatOpen(false)}
+        prefillService={prefillService}
+        onBookingConfirmed={handleBookingConfirmed}
+        user={user}
+        onRequireLogin={() => {
+          setIsAiChatOpen(false);
+          setCurrentScreen('login');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
     </div>
   );
 }
+

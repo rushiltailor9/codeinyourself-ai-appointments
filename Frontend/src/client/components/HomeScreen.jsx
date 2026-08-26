@@ -1,15 +1,11 @@
 import React from 'react';
-import { AiBookingChat } from './AiBookingChat.jsx';
-import { CalendarCheck, Bot, ShieldCheck, ArrowRight } from 'lucide-react';
+import { CalendarCheck, Bot, ShieldCheck, ArrowRight, Sparkles } from 'lucide-react';
 
 export function HomeScreen({
-  prefillService,
-  onBookingConfirmed,
   onOpenPortal,
   onExploreServices,
   onExplorePortfolio,
-  user,
-  onRequireLogin,
+  onOpenAiChat,
 }) {
   return (
     <div>
@@ -21,18 +17,24 @@ export function HomeScreen({
               Book a slot with our team<br /> by just <span className="text-signal">describing it</span>.
             </h1>
             <p className="text-muted text-base sm:text-lg mb-8 max-w-md">
-              No forms, no back-and-forth email. Tell our AI assistant what you need and when — it checks the calendar and locks in the time.
+              No forms, no back-and-forth email. Click ASK AI anywhere or tell our assistant what you need — it checks availability and locks in the time.
             </p>
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={onExploreServices}
-                className="bg-signal text-ink-900 font-semibold px-5 py-3 rounded-md text-sm hover:bg-signal-soft transition-colors flex items-center gap-2"
+                onClick={onOpenAiChat}
+                className="bg-signal text-ink-900 font-bold px-5 py-3 rounded-md text-sm hover:bg-signal-soft transition-colors flex items-center gap-2 cursor-pointer shadow-md shadow-signal/20"
               >
-                View services <ArrowRight size={15} />
+                <Sparkles size={16} className="animate-pulse" /> ASK AI to Book <ArrowRight size={15} />
+              </button>
+              <button
+                onClick={onExploreServices}
+                className="border border-ink-600 text-paper px-5 py-3 rounded-md text-sm hover:border-signal/50 transition-colors cursor-pointer"
+              >
+                View services
               </button>
               <button
                 onClick={onExplorePortfolio}
-                className="border border-ink-600 text-paper px-5 py-3 rounded-md text-sm hover:border-signal/50 transition-colors"
+                className="border border-ink-600 text-paper px-5 py-3 rounded-md text-sm hover:border-signal/50 transition-colors cursor-pointer"
               >
                 See our work
               </button>
@@ -40,12 +42,29 @@ export function HomeScreen({
           </div>
 
           <div className="flex justify-center lg:justify-end">
-            <AiBookingChat
-              prefillService={prefillService}
-              onBookingConfirmed={onBookingConfirmed}
-              user={user}
-              onRequireLogin={onRequireLogin}
-            />
+            <div
+              onClick={onOpenAiChat}
+              className="w-full max-w-md rounded-2xl border border-signal/30 bg-ink-950/80 p-8 text-left shadow-2xl shadow-black/50 backdrop-blur group hover:border-signal/70 transition-all cursor-pointer relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-signal/10 rounded-full blur-2xl group-hover:bg-signal/20 transition-colors pointer-events-none"></div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-signal/10 border border-signal/40 flex items-center justify-center text-signal group-hover:scale-110 transition-transform">
+                  <Sparkles size={20} className="animate-pulse" />
+                </div>
+                <div>
+                  <span className="font-mono text-xs text-signal block">// AI ASSISTANT ONLINE</span>
+                  <h3 className="font-bold text-paper text-lg">Smart Booking Assistant</h3>
+                </div>
+              </div>
+              <p className="text-sm text-muted mb-6 leading-relaxed">
+                Schedule consultations, ask about available slots, or request IT support in plain language.
+              </p>
+              <div className="inline-flex items-center gap-2 text-xs font-mono font-bold text-ink-900 bg-signal px-4 py-2.5 rounded-lg group-hover:bg-signal-soft transition-colors">
+                <Bot size={15} />
+                <span>CLICK TO ASK AI</span>
+                <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
           </div>
         </div>
       </section>

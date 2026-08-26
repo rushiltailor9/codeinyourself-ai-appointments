@@ -1,56 +1,89 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
-import { Send, Terminal, Sparkles } from 'lucide-react';
+import { Send, Terminal, Sparkles, X, Calendar, RefreshCw, Trash2, ListFilter, Clock, Plus } from 'lucide-react';
 import { sendChatMessage } from '../../api/aiApi.js';
 
-const SUGGESTIONS = [
-  'Web consultation tomorrow at 3pm',
-  'IT support, our server is down',
-  'Product strategy session Thursday 11am',
+const QUICK_ACTIONS = [
+  { label: 'Suggest Slots', icon: Sparkles, prompt: 'Suggest available slots' },
+  { label: 'Book Slot', icon: Calendar, prompt: 'I want to book an appointment tomorrow at 3pm' },
+  { label: 'Reschedule', icon: RefreshCw, prompt: 'Reschedule my appointment' },
+  { label: 'Cancel Slot', icon: Trash2, prompt: 'Cancel my appointment' },
+  { label: 'My Bookings', icon: ListFilter, prompt: 'Show my upcoming appointments' },
 ];
 
-export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequireLogin }) {
-  const [messages, setMessages] = useState([
+const getInitialConversationId = () => {
+  const savedId = localStorage.getItem('nexora_ai_conv_id');
+  if (savedId) return savedId;
+  const newId = `conv-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+  localStorage.setItem('nexora_ai_conv_id', newId);
+  return newId;
+};
+
+const getInitialMessages = (user) => {
+  const savedMsgs = localStorage.getItem('nexora_ai_messages');
+  if (savedMsgs) {
+    try {
+      const parsed = JSON.parse(savedMsgs);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    } catch (e) {
+      console.warn('Could not parse stored AI messages:', e);
+    }
+  }
+  return [
     {
       id: 'greet',
       sender: 'ai',
       text: user
-        ? `Hi ${user.name ? user.name.split(' ')[0] : 'there'}, I'm the Nexora booking assistant. Tell me what you need and when — e.g. "IT support call tomorrow at 2pm."`
-        : "Welcome to Nexora! Please sign in or register to interact with our AI assistant and book appointments.",
+        ? `Hi ${user.name ? user.name.split(' ')[0] : 'there'}! I'm the Nexora AI Assistant. Tell me what service you need, or click an action below to book, reschedule, or cancel slots.`
+        : "Welcome to Nexora! Please sign in or register to interact with our AI assistant and manage appointment slots.",
     },
-  ]);
+  ];
+};
+
+export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequireLogin, onClose }) {
+  const [conversationId, setConversationId] = useState(getInitialConversationId);
+  const [messages, setMessages] = useState(() => getInitialMessages(user));
   const [input, setInput] = useState('');
-  const [conversationId, setConversationId] = useState(() => `conv-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`);
   const [thinking, setThinking] = useState(false);
   const scrollRef = useRef(null);
 
+  // Automatically save conversation ID and chat messages to localStorage
   useEffect(() => {
-    if (user) {
-      setMessages([
-        {
-          id: 'greet',
-          sender: 'ai',
-          text: `Hi ${user.name ? user.name.split(' ')[0] : 'there'}, I'm the Nexora booking assistant. Tell me what you need and when — e.g. "IT support call tomorrow at 2pm."`,
-        },
-      ]);
-    } else {
-      setMessages([
-        {
-          id: 'greet',
-          sender: 'ai',
-          text: "Welcome to Nexora! Please sign in or register to interact with our AI assistant and book appointments.",
-        },
-      ]);
+    if (conversationId) {
+      localStorage.setItem('nexora_ai_conv_id', conversationId);
     }
-  }, [user]);
+    if (messages && messages.length > 0) {
+      localStorage.setItem('nexora_ai_messages', JSON.stringify(messages));
+    }
+  }, [conversationId, messages]);
+
+  // Handle New Chat Session
+  const handleNewChat = () => {
+    const newId = `conv-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    const initialMsg = [
+      {
+        id: 'greet',
+        sender: 'ai',
+        text: user
+          ? `Hi ${user.name ? user.name.split(' ')[0] : 'there'}! I'm the Nexora AI Assistant. Tell me what service you need, or click an action below to book, reschedule, or cancel slots.`
+          : "Welcome to Nexora! Please sign in or register to interact with our AI assistant and manage appointment slots.",
+      },
+    ];
+    setConversationId(newId);
+    setMessages(initialMsg);
+    localStorage.setItem('nexora_ai_conv_id', newId);
+    localStorage.setItem('nexora_ai_messages', JSON.stringify(initialMsg));
+    toast.info('Started a new AI conversation.');
+  };
 
   useEffect(() => {
     if (prefillService && user) {
       setMessages((prev) => [
         ...prev,
-        { id: `pre-${Date.now()}`, sender: 'ai', text: `Set to book: ${prefillService}. What date and time works for you?` },
+        { id: `pre-${Date.now()}`, sender: 'ai', text: `Selected service: ${prefillService}. What date and time works for you? (e.g. "Tomorrow at 2pm")` },
       ]);
-      // Send intent to backend to set draft service
       sendChatMessage({ message: `I would like to book ${prefillService}`, conversationId }).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,20 +93,11 @@ export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequ
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, thinking]);
 
-  const pushMessage = (sender, text) => {
-    setMessages((prev) => [...prev, { id: `${sender}-${Date.now()}-${Math.random()}`, sender, text }]);
+  const pushMessage = (sender, text, extra = {}) => {
+    setMessages((prev) => [...prev, { id: `${sender}-${Date.now()}-${Math.random()}`, sender, text, ...extra }]);
   };
 
   const handleSend = async (rawText) => {
-    if (!user) {
-      pushMessage('client', rawText || input || 'Book appointment');
-      pushMessage('ai', 'Authentication required: Please sign in or create an account to chat with the AI assistant and schedule an appointment.');
-      if (onRequireLogin) {
-        setTimeout(onRequireLogin, 1200);
-      }
-      return;
-    }
-
     const text = (rawText ?? input).trim();
     if (!text) return;
     pushMessage('client', text);
@@ -85,7 +109,12 @@ export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequ
       if (result.conversationId) {
         setConversationId(result.conversationId);
       }
-      pushMessage('ai', result.message || 'I processed your request.');
+
+      pushMessage('ai', result.message || 'I processed your request.', {
+        done: result.done,
+        booking: result.booking,
+        awaitingConfirmation: result.awaitingConfirmation,
+      });
       setThinking(false);
 
       if (result.message && result.message.includes('successfully cancelled')) {
@@ -117,67 +146,174 @@ export function AiBookingChat({ prefillService, onBookingConfirmed, user, onRequ
     }
   };
 
+  // Extract times if AI message lists available slots (e.g., "include: 09:00, 11:00, 14:00")
+  const extractTimeOptions = (text) => {
+    if (!text) return [];
+    const match = text.match(/(?:slots|openings|include:)\s*([0-9]{2}:[0-9]{2}(?:,\s*[0-9]{2}:[0-9]{2})*)/i);
+    if (match && match[1]) {
+      return match[1].split(',').map((s) => s.trim());
+    }
+    return [];
+  };
+
+  // Extract service options if AI message lists offered services (e.g., "We offer: Web Dev, IT Support")
+  const extractServiceOptions = (text) => {
+    if (!text) return [];
+    const match = text.match(/offer:\s*([^.\n]+)/i);
+    if (match && match[1]) {
+      return match[1]
+        .split(',')
+        .map((s) => s.trim().replace(/^and\s+/i, ''))
+        .filter(Boolean);
+    }
+    return [];
+  };
+
   return (
-    <div className="w-full max-w-lg rounded-lg border border-ink-600 bg-ink-950 shadow-2xl shadow-black/40 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-ink-700 bg-ink-900">
-        <span className="w-2.5 h-2.5 rounded-full bg-coral/70" />
-        <span className="w-2.5 h-2.5 rounded-full bg-amber/70" />
-        <span className="w-2.5 h-2.5 rounded-full bg-signal/70" />
-        <span className="ml-2 font-mono text-xs text-muted flex items-center gap-1.5">
-          <Terminal size={12} /> booking-assistant — nexora
-        </span>
+    <div className="w-full max-w-lg rounded-lg border border-ink-600 bg-ink-950 shadow-2xl shadow-black/40 overflow-hidden flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-ink-700 bg-ink-900 shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-coral/70" />
+          <span className="w-2.5 h-2.5 rounded-full bg-amber/70" />
+          <span className="w-2.5 h-2.5 rounded-full bg-signal/70" />
+          <span className="ml-2 font-mono text-xs text-muted flex items-center gap-1.5">
+            <Terminal size={12} /> booking-assistant — nexora
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-1 text-[11px] font-mono text-signal bg-signal/10 border border-signal/30 px-2 py-0.5 rounded hover:bg-signal hover:text-ink-900 transition-colors cursor-pointer"
+            title="Start New Chat Session"
+          >
+            <Plus size={12} />
+            <span>New Chat</span>
+          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="text-muted hover:text-paper transition-colors cursor-pointer p-1 rounded hover:bg-ink-800"
+              title="Close Assistant"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div ref={scrollRef} className="h-72 overflow-y-auto px-4 py-3 space-y-3 font-mono text-[13px]">
-        {messages.map((m) => (
-          <div key={m.id} className={m.sender === 'client' ? 'text-right' : ''}>
-            <span className={m.sender === 'client' ? 'text-paper' : 'text-signal'}>
-              {m.sender === 'client' ? '$ ' : '> '}
-            </span>
-            <span className={m.sender === 'client' ? 'text-paper' : 'text-signal-soft'}>{m.text}</span>
-          </div>
-        ))}
+      {/* Messages Scroll Container */}
+      <div ref={scrollRef} className="h-64 sm:h-72 max-h-[45vh] overflow-y-auto px-4 py-3 space-y-3 font-mono text-[13px]">
+        {messages.map((m) => {
+          const timeOptions = m.sender === 'ai' ? extractTimeOptions(m.text) : [];
+          const serviceOptions = m.sender === 'ai' ? extractServiceOptions(m.text) : [];
+          const isCancelPrompt = m.sender === 'ai' && m.text.includes('You Sure Cancel');
+
+          return (
+            <div key={m.id} className={`space-y-1.5 ${m.sender === 'client' ? 'text-right' : ''}`}>
+              <div>
+                <span className={m.sender === 'client' ? 'text-paper font-semibold' : 'text-signal font-semibold'}>
+                  {m.sender === 'client' ? '$ ' : '> '}
+                </span>
+                <span className={m.sender === 'client' ? 'text-paper' : 'text-signal-soft whitespace-pre-line'}>{m.text}</span>
+              </div>
+
+              {/* Confirmation quick-reply buttons if cancelling */}
+              {isCancelPrompt && (
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => handleSend('Yes')}
+                    className="text-xs bg-coral/20 border border-coral/50 text-coral hover:bg-coral hover:text-white px-3 py-1 rounded-md transition-colors cursor-pointer font-sans font-semibold"
+                  >
+                    Yes, Cancel Slot
+                  </button>
+                  <button
+                    onClick={() => handleSend('No')}
+                    className="text-xs bg-ink-800 border border-ink-600 text-paper hover:bg-ink-700 px-3 py-1 rounded-md transition-colors cursor-pointer font-sans"
+                  >
+                    No, Keep Slot
+                  </button>
+                </div>
+              )}
+
+              {/* Clickable Service pills if AI listed offered services */}
+              {serviceOptions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  <span className="text-[11px] text-muted self-center mr-1">Select service:</span>
+                  {serviceOptions.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => handleSend(`I want to book ${s}`)}
+                      className="text-xs bg-signal/15 border border-signal/50 text-signal hover:bg-signal hover:text-ink-900 px-2.5 py-1 rounded transition-colors font-mono cursor-pointer"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Clickable Time slot pills if AI offered times */}
+              {timeOptions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  <span className="text-[11px] text-muted self-center mr-1">Select time:</span>
+                  {timeOptions.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => handleSend(t)}
+                      className="text-xs bg-signal/10 border border-signal/40 text-signal hover:bg-signal hover:text-ink-900 px-2.5 py-1 rounded transition-colors font-mono cursor-pointer"
+                    >
+                      <Clock size={11} className="inline mr-1" />
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
         {thinking && (
           <div className="flex items-center gap-1.5 text-muted">
-            <Sparkles size={12} className="animate-pulse" />
-            <span>thinking…</span>
+            <Sparkles size={12} className="animate-pulse text-signal" />
+            <span>AI analyzing request…</span>
           </div>
         )}
       </div>
 
-      <div className="px-3 pt-2 pb-1 flex gap-1.5 flex-wrap">
-        {SUGGESTIONS.map((s) => (
+      {/* Quick Action Pills */}
+      <div className="px-3 py-2 bg-ink-950 border-t border-ink-800 flex gap-1.5 overflow-x-auto scrollbar-none">
+        {QUICK_ACTIONS.map(({ label, icon: Icon, prompt }) => (
           <button
-            key={s}
-            onClick={() => handleSend(s)}
-            className="text-[11px] font-mono text-muted border border-ink-600 rounded-full px-2.5 py-1 hover:border-signal/50 hover:text-signal transition-colors"
+            key={label}
+            onClick={() => handleSend(prompt)}
+            className="text-[11px] font-mono text-paper bg-ink-900 border border-ink-700 rounded-lg px-2.5 py-1.5 hover:border-signal hover:text-signal transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
           >
-            {s}
+            <Icon size={12} className="text-signal" />
+            <span>{label}</span>
           </button>
         ))}
       </div>
 
       {!user ? (
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-ink-700 bg-ink-900/60">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-ink-700 bg-ink-900/60 shrink-0">
           <span className="text-xs text-muted font-mono">Sign in required to book</span>
           <button
             onClick={onRequireLogin}
-            className="bg-signal text-ink-900 font-semibold text-xs font-mono px-3 py-1.5 rounded hover:bg-signal-soft transition-colors"
+            className="bg-signal text-ink-900 font-semibold text-xs font-mono px-3 py-1.5 rounded hover:bg-signal-soft transition-colors cursor-pointer"
           >
             Sign In / Register →
           </button>
         </div>
       ) : (
-        <div className="flex items-center gap-2 px-3 py-3 border-t border-ink-700">
+        <div className="flex items-center gap-2 px-3 py-3 border-t border-ink-700 shrink-0">
           <span className="font-mono text-signal text-sm">$</span>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Type your request..."
-            className="flex-1 bg-transparent font-mono text-sm text-paper placeholder:text-muted focus:outline-none"
+            placeholder="Describe your request (book, reschedule, cancel)..."
+            className="flex-1 bg-transparent font-mono text-xs sm:text-sm text-paper placeholder:text-muted focus:outline-none"
           />
-          <button onClick={() => handleSend()} className="text-signal hover:text-signal-soft shrink-0">
+          <button onClick={() => handleSend()} className="text-signal hover:text-signal-soft shrink-0 cursor-pointer">
             <Send size={16} />
           </button>
         </div>

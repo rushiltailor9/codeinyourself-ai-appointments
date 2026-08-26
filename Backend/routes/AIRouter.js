@@ -10,7 +10,7 @@ import { adminMiddleware } from '../middleware/adminMiddleware.js';
 
 const router = express.Router();
 
-router.post('/chat', authMiddleware, handleAIChat);
+router.post('/chat', optionalAuthMiddleware, handleAIChat);
 router.get('/chats', authMiddleware, adminMiddleware, getAllChatsAdmin);
 router.post('/chats/:conversationId/takeover', authMiddleware, adminMiddleware, toggleTakeover);
 router.post('/chats/:conversationId/reply', authMiddleware, adminMiddleware, sendAdminChatMessage);
